@@ -133,12 +133,3 @@ export async function fetchPaginatedPayments(page: number, limit: number) {
   return response.data;
 }
 
-/**
- * v2.49.2: Busca alertas paginados (inadimplentes + vencimentos proximos)
- */
-export async function fetchPaginatedAlerts(page: number, limit: number) {
-  const response = await api.get('/dashboard/alerts/paginated', {
-    params: { page, limit },
-  });
-  return response.data;
-}

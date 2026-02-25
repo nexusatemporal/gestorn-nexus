@@ -162,15 +162,15 @@ services:
         - "traefik.http.routers.gestornx-frontend.tls=true"
         - "traefik.http.routers.gestornx-frontend.tls.certresolver=letsencryptresolver"
         - "traefik.http.routers.gestornx-frontend.service=gestornx-frontend"
-        - "traefik.http.routers.gestornx-frontend.middlewares=gestornx-compress,gestornx-cache"
+        - "traefik.http.routers.gestornx-frontend.middlewares=gestornx-compress"
 
         # Compressão Brotli/Gzip (v2.51.0 - Performance)
         - "traefik.http.middlewares.gestornx-compress.compress=true"
         - "traefik.http.middlewares.gestornx-compress.compress.excludedcontenttypes=image/png,image/jpeg,image/gif,image/webp,video/mp4"
 
-        # Cache Headers para Assets Estáticos (v2.51.0 - Performance)
-        - "traefik.http.middlewares.gestornx-cache.headers.customresponseheaders.Cache-Control=public, max-age=31536000, immutable"
-        - "traefik.http.middlewares.gestornx-cache.headers.customresponseheaders.Vary=Accept-Encoding"
+        # ✅ v2.55.0: Cache removido do Traefik (aplicado granularmente no nginx)
+        # Assets com hash do Vite já são cacheados pelo nginx (1y immutable)
+        # index.html sempre no-cache para garantir deploy instantâneo
 
         # Service
         - "traefik.http.services.gestornx-frontend.loadbalancer.server.port=80"

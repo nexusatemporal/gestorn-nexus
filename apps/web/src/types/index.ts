@@ -244,16 +244,6 @@ export interface DashboardKPIs {
   overduePaymentsTrendUp?: boolean;
 }
 
-export interface LeadsByOrigin {
-  origin: string;
-  count: number;
-}
-
-export interface LeadsByStatus {
-  status: string;
-  count: number;
-}
-
 export interface RevenueOverTime {
   month: string;
   revenue: number;
@@ -262,12 +252,6 @@ export interface RevenueOverTime {
 export interface ClientsByPlan {
   plan: string;
   count: number;
-}
-
-export interface PaymentsByStatus {
-  status: string;
-  count: number;
-  amount: number;
 }
 
 export interface RecentLead {
@@ -301,11 +285,8 @@ export interface RecentActivity {
 
 export interface DashboardStats {
   kpis: DashboardKPIs;
-  leadsByOrigin: LeadsByOrigin[];
-  leadsByStatus: LeadsByStatus[];
   revenueOverTime: RevenueOverTime[];
   clientsByPlan: ClientsByPlan[];
-  paymentsByStatus: PaymentsByStatus[];
   recentActivity: RecentActivity;
 }
 

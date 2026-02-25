@@ -114,6 +114,7 @@ export function Dashboard() {
   const queryClient = useQueryClient();
   const [product, setProduct] = useState('');
   const [mrrGraphPeriod, setMrrGraphPeriod] = useState<6 | 12>(12); // ✅ v2.50.2: Filtro próprio do gráfico MRR
+  const [insightsRefreshKey, setInsightsRefreshKey] = useState(0); // ✅ v2.55.0: Force refresh insights
 
   // ✅ v2.51.0: Query principal (MoM - Month over Month)
   const { data: stats, isLoading } = useApiQuery<DashboardStats>(
@@ -125,10 +126,10 @@ export function Dashboard() {
     },
   );
 
-  // ✅ v2.50.2: Query separada para gráfico MRR (não afetada por filtros globais)
+  // ✅ v2.55.0: Query separada para gráfico MRR com filtro de meses
   const { data: mrrGraphData } = useApiQuery<DashboardStats['revenueOverTime']>(
     ['dashboard-mrr-graph', mrrGraphPeriod, product],
-    `/dashboard/stats${product ? `?product=${product}` : ''}`,
+    `/dashboard/stats?mrrMonths=${mrrGraphPeriod}${product ? `&product=${product}` : ''}`,
     {
       select: (data: any) => data.revenueOverTime || [],
     },
@@ -138,9 +139,10 @@ export function Dashboard() {
   const {
     data: insights,
     isLoading: insightsLoading,
+    isError: insightsError,
   } = useApiQuery<GenerateInsightsResponseDto>(
-    ['dashboard-insights', product],
-    `/dashboard/insights${product ? `?product=${product}` : ''}`,
+    ['dashboard-insights', product, insightsRefreshKey],
+    `/dashboard/insights?refresh=${insightsRefreshKey > 0}${product ? `&product=${product}` : ''}`,
     {
       staleTime: 30 * 60 * 1000, // 30 minutes
     },
@@ -168,10 +170,15 @@ export function Dashboard() {
   }
 
   // Preparar dados para gráficos
-  const revenueOverTimeData = (mrrGraphData || []).map((item) => ({
-    month: format(new Date(item.month), 'MMM/yy', { locale: ptBR }),
-    mrr: item.revenue,
-  }));
+  const revenueOverTimeData = (mrrGraphData || stats.revenueOverTime || []).map((item) => {
+    // v2.55.0: Parse manual para evitar timezone shift (new Date('2026-02') recua 1 dia em BRT)
+    const [year, month] = item.month.split('-').map(Number);
+    const date = new Date(year, month - 1, 15); // dia 15 no timezone local, sem risco de recuo
+    return {
+      month: format(date, 'MMM/yy', { locale: ptBR }),
+      mrr: item.revenue,
+    };
+  });
 
   // ✅ v2.50.5: Ordenação customizada dos planos
   const PLAN_ORDER = [
@@ -312,9 +319,7 @@ export function Dashboard() {
                 )}
               </div>
               <button
-                onClick={() => {
-                  queryClient.invalidateQueries({ queryKey: ['dashboard-insights'] });
-                }}
+                onClick={() => setInsightsRefreshKey((k) => k + 1)}
                 disabled={insightsLoading}
                 className="text-xs text-zinc-500 hover:text-nexus-orange transition-colors flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
               >
@@ -337,7 +342,6 @@ export function Dashboard() {
                       isDark ? 'bg-zinc-950/50 border-zinc-700/50' : 'bg-zinc-50 border-zinc-200'
                     } p-4 rounded-xl border flex items-start gap-4`}
                   >
-                    {/* ✅ v2.53.0: Skeleton com animação profissional (pattern Stripe) */}
                     <div className="w-2 h-2 mt-2 rounded-full bg-zinc-700 animate-pulse"></div>
                     <div className="flex-1 space-y-2">
                       <div
@@ -358,6 +362,28 @@ export function Dashboard() {
                     </div>
                   </div>
                 ))}
+              </div>
+            ) : insightsError ? (
+              <div
+                className={`${
+                  isDark ? 'bg-zinc-950/50 border-zinc-700/50' : 'bg-zinc-50 border-zinc-200'
+                } p-4 rounded-xl border flex items-start gap-4`}
+              >
+                <div className="w-2 h-2 mt-2 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]"></div>
+                <div className="flex-1">
+                  <p className={`font-semibold text-sm ${isDark ? 'text-zinc-200' : 'text-zinc-900'}`}>
+                    Erro ao carregar insights
+                  </p>
+                  <p className="text-zinc-500 text-xs mt-1">
+                    Nao foi possivel gerar insights. Tente novamente.
+                  </p>
+                  <button
+                    onClick={() => queryClient.invalidateQueries({ queryKey: ['dashboard-insights'] })}
+                    className="text-nexus-orange text-xs mt-2 font-medium hover:underline"
+                  >
+                    Tentar novamente
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="space-y-4">

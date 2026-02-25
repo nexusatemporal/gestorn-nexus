@@ -11,6 +11,8 @@ import { ProductType } from '@prisma/client';
  */
 export const DashboardFiltersSchema = z.object({
   product: z.nativeEnum(ProductType).optional(),
+  mrrMonths: z.coerce.number().int().min(1).max(24).optional(),
+  refresh: z.coerce.boolean().optional(),
 });
 
 export type DashboardFiltersDto = z.infer<typeof DashboardFiltersSchema>;

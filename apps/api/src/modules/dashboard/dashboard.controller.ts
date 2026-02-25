@@ -102,22 +102,4 @@ export class DashboardController {
     return this.dashboardService.generateInsights(userId, userRole, filters);
   }
 
-  /**
-   * ✅ v2.49.2: GET /dashboard/alerts/paginated
-   * Busca alertas paginados (inadimplentes + vencimentos próximos)
-   */
-  @Get('alerts/paginated')
-  async getPaginatedAlerts(
-    @CurrentUser('id') userId: string,
-    @CurrentUser('role') userRole: UserRole,
-    @Query(new ZodValidationPipe(PaginationQuerySchema))
-    query: PaginationQueryDto,
-  ) {
-    return this.dashboardService.getPaginatedAlerts(
-      userId,
-      userRole,
-      query.page,
-      query.limit,
-    );
-  }
 }

@@ -98,13 +98,10 @@ export class DashboardService {
 
     // ✅ v2.51.0: Distribuições mostram MÊS ATUAL (não período dinâmico)
     // ✅ v2.52.0: Removido leadsByOrigin, leadsByStatus, paymentsByStatus (não usados pelo frontend)
-    const clientsByPlan = await this.getClientsByPlan(
-      whereClauseForClients,
-      currentMonthStart,
-    );
+    const clientsByPlan = await this.getClientsByPlan(whereClauseForClients);
 
     // MRR graph mantém filtro independente (6/12 meses)
-    const revenueOverTime = await this.getRevenueOverTime(whereClauseForClients, '6m');
+    const revenueOverTime = await this.getRevenueOverTime(whereClauseForClients, filters.mrrMonths || 6);
 
     // Atividades recentes NÃO filtradas por tempo (sempre últimas 5)
     const recentActivity = await this.getRecentActivity(
@@ -218,21 +215,20 @@ export class DashboardService {
       },
     });
 
-    // ✅ v2.51.0: Métricas do MÊS ANTERIOR (MoM comparison)
+    // ✅ v2.55.0: Métricas do MÊS ANTERIOR (snapshot cumulativo até fim do mês anterior)
+    // Ambos (current e previous) são cumulativos — trend mostra crescimento real MoM
     const totalClientsPrevious = await this.prisma.client.count({
       where: {
         ...whereClauseForClients,
         createdAt: {
-          gte: previousMonthStart,
           lte: previousMonthEnd,
         },
       },
     });
 
-    // ✅ v2.52.0: Usando método consolidado calculateMrrForPeriod()
+    // ✅ v2.55.0: MRR cumulativo até fim do mês anterior (snapshot)
     const mrrPrevious = await this.calculateMrrForPeriod(
       whereClauseForClients,
-      previousMonthStart,
       previousMonthEnd,
     );
 
@@ -303,102 +299,90 @@ export class DashboardService {
   }
 
   /**
-   * Busca distribuição de leads por origem
+   * MRR acumulado ao longo dos últimos N meses
+   * ✅ v2.55.0: Lógica de acumulação igual ao Finance (getMrrHistory)
+   * - Histórico imutável: cancelar em março não altera fevereiro
+   * - New MRR sem filtro de status (conta pela data de criação)
+   * - Churn/Overdue descontados apenas no mês em que ocorrem
    */
-  private async getLeadsByOrigin(whereClause: any, startDate: Date) {
-    const leads = await this.prisma.lead.groupBy({
-      by: ['originId'],
-      where: {
-        ...whereClause,
-        createdAt: {
-          gte: startDate,
-        },
-      },
-      _count: true,
-    });
+  private async getRevenueOverTime(whereClause: any, months: number) {
+    const now = new Date();
 
-    return leads.map((item) => ({
-      origin: item.originId || 'Não informado',
-      count: item._count,
-    }));
-  }
+    // Filtro de scoping (vendedor/produto) — merge num único objeto client
+    const clientFilterInner: any = {};
+    if (whereClause.vendedorId) clientFilterInner.vendedorId = whereClause.vendedorId;
+    if (whereClause.productType) clientFilterInner.productType = whereClause.productType;
+    const clientFilter = Object.keys(clientFilterInner).length > 0
+      ? { client: clientFilterInner }
+      : {};
 
-  /**
-   * Busca distribuição de leads por status
-   */
-  private async getLeadsByStatus(whereClause: any, startDate: Date) {
-    const leads = await this.prisma.lead.groupBy({
-      by: ['status'],
-      where: {
-        ...whereClause,
-        createdAt: {
-          gte: startDate,
-        },
-      },
-      _count: true,
-    });
+    // MRR inicial: tudo ativo ANTES do período
+    const firstMonthStart = new Date(now.getFullYear(), now.getMonth() - months + 1, 1);
 
-    return leads.map((item) => ({
-      status: item.status,
-      count: item._count,
-    }));
-  }
-
-  /**
-   * Busca revenue ao longo dos últimos N meses
-   * ✅ v2.50.2: Período dinâmico (6 ou 12 meses) + filtro de produto
-   */
-  private async getRevenueOverTime(whereClause: any, period: string) {
-    // ✅ v2.50.2: Calcular quantos meses mostrar baseado no período
-    const monthsToShow = period === '180d' ? 6 : 12; // 180d = 6 meses, default = 12 meses
-    const startDate = subMonths(new Date(), monthsToShow);
-
-    // ✅ v2.50.2: Buscar FinanceTransaction com filtro de produto
-    const transactions = await this.prisma.financeTransaction.findMany({
+    const mrrInicial = await this.prisma.financeTransaction.aggregate({
       where: {
         type: 'INCOME',
-        status: 'PAID',
-        isRecurring: true, // Apenas MRR (receitas recorrentes)
-        paidAt: {
-          gte: startDate,
-        },
-        client: {
-          ...(whereClause.vendedorId ? { vendedorId: whereClause.vendedorId } : {}),
-          ...(whereClause.productType ? { productType: whereClause.productType } : {}),
-        },
+        isRecurring: true,
+        status: { in: ['PAID', 'PENDING'] },
+        date: { lt: firstMonthStart },
+        ...clientFilter,
       },
-      select: {
-        paidAt: true,
-        amount: true,
-      },
+      _sum: { amount: true },
     });
 
-    // Agrupar por mês
-    const revenueByMonth = new Map<string, number>();
+    let mrrAcumulado = Number(mrrInicial._sum.amount || 0);
+    const result: Array<{ month: string; revenue: number }> = [];
 
-    // ✅ v2.50.2: Garantir que todos os N meses aparecem (mesmo com valor 0)
-    for (let i = monthsToShow - 1; i >= 0; i--) {
-      const monthDate = subMonths(new Date(), i);
-      const monthKey = format(startOfMonth(monthDate), 'yyyy-MM');
-      revenueByMonth.set(monthKey, 0);
+    for (let i = months - 1; i >= 0; i--) {
+      const monthStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const monthEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 0, 23, 59, 59);
+      const monthKey = format(monthStart, 'yyyy-MM');
+
+      // New MRR: transações criadas no mês (SEM filtro de status — histórico imutável)
+      const newMrr = await this.prisma.financeTransaction.aggregate({
+        where: {
+          type: 'INCOME',
+          isRecurring: true,
+          date: { gte: monthStart, lte: monthEnd },
+          ...clientFilter,
+        },
+        _sum: { amount: true },
+      });
+
+      // Churn: canceladas no mês (pela data do cancelamento)
+      const churn = await this.prisma.financeTransaction.aggregate({
+        where: {
+          type: 'INCOME',
+          isRecurring: true,
+          status: 'CANCELLED',
+          updatedAt: { gte: monthStart, lte: monthEnd },
+          ...clientFilter,
+        },
+        _sum: { amount: true },
+      });
+
+      // Overdue: viraram inadimplente no mês
+      const overdue = await this.prisma.financeTransaction.aggregate({
+        where: {
+          type: 'INCOME',
+          isRecurring: true,
+          status: 'OVERDUE',
+          updatedAt: { gte: monthStart, lte: monthEnd },
+          ...clientFilter,
+        },
+        _sum: { amount: true },
+      });
+
+      const newValue = Number(newMrr._sum.amount || 0);
+      const churnValue = Number(churn._sum.amount || 0);
+      const overdueValue = Number(overdue._sum.amount || 0);
+
+      mrrAcumulado += newValue - churnValue - overdueValue;
+
+      result.push({ month: monthKey, revenue: mrrAcumulado });
     }
 
-    // Preencher com valores reais
-    transactions.forEach((transaction) => {
-      if (transaction.paidAt) {
-        const monthKey = format(startOfMonth(transaction.paidAt), 'yyyy-MM');
-        const currentRevenue = revenueByMonth.get(monthKey) || 0;
-        revenueByMonth.set(monthKey, currentRevenue + Number(transaction.amount));
-      }
-    });
-
-    // Converter para array e ordenar
-    return Array.from(revenueByMonth.entries())
-      .map(([month, revenue]) => ({
-        month,
-        revenue,
-      }))
-      .sort((a, b) => a.month.localeCompare(b.month));
+    return result;
   }
 
   /**
@@ -408,14 +392,14 @@ export class DashboardService {
    * ✅ v2.52.0: Otimizado com Prisma groupBy (agregação no banco)
    * Performance: ~200ms mais rápido que findMany + reduce manual
    */
-  private async getClientsByPlan(whereClause: any, startDate: Date) {
-    // ✅ EFICIENTE: Deixa o banco fazer a agregação
+  private async getClientsByPlan(whereClause: any) {
+    // ✅ v2.55.0: Mostra TODOS os clientes ativos por plano (não só do mês atual)
     const planGroups = await this.prisma.client.groupBy({
       by: ['planId'],
       where: {
         ...whereClause,
-        createdAt: {
-          gte: startDate,
+        status: {
+          in: [ClientStatus.ATIVO, ClientStatus.EM_TRIAL],
         },
       },
       _count: {
@@ -438,35 +422,6 @@ export class DashboardService {
         ? planMap.get(group.planId) || 'Sem plano'
         : 'Sem plano',
       count: group._count.id,
-    }));
-  }
-
-  /**
-   * Busca distribuição de pagamentos por status
-   */
-  private async getPaymentsByStatus(whereClause: any, startDate: Date) {
-    const payments = await this.prisma.payment.groupBy({
-      by: ['status'],
-      where: {
-        createdAt: {
-          gte: startDate,
-        },
-        client: whereClause.vendedorId
-          ? {
-              vendedorId: whereClause.vendedorId,
-            }
-          : {},
-      },
-      _count: true,
-      _sum: {
-        amount: true,
-      },
-    });
-
-    return payments.map((item) => ({
-      status: item.status,
-      count: item._count,
-      amount: Number(item._sum?.amount || 0),
     }));
   }
 
@@ -760,113 +715,6 @@ export class DashboardService {
   }
 
   /**
-   * ✅ v2.49.2: Busca alertas paginados (inadimplentes + vencimentos próximos)
-   * Combina clientes INADIMPLENTE com próximos vencimentos (7 dias)
-   */
-  async getPaginatedAlerts(
-    userId: string,
-    userRole: UserRole,
-    page: number,
-    limit: number,
-  ) {
-    const sevenDaysFromNow = new Date();
-    sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
-
-    // Scoping por role
-    const clientWhereClause: any = {};
-    if (userRole === UserRole.VENDEDOR || userRole === UserRole.GESTOR) {
-      clientWhereClause.vendedorId = userId;
-    }
-
-    // 1. Buscar clientes inadimplentes
-    const overdueClients = await this.prisma.client.findMany({
-      where: {
-        ...clientWhereClause,
-        status: 'INADIMPLENTE',
-      },
-      select: {
-        id: true,
-        contactName: true,
-        company: true,
-        status: true,
-        subscriptions: {
-          where: { status: { in: ['ACTIVE', 'PAST_DUE'] } },
-          select: { amount: true, nextBillingDate: true },
-          orderBy: { createdAt: 'desc' },
-          take: 1,
-        },
-      },
-      orderBy: { updatedAt: 'desc' },
-    });
-
-    // 2. Buscar próximos vencimentos (7 dias)
-    const upcomingPayments = await this.prisma.subscription.findMany({
-      where: {
-        status: 'ACTIVE',
-        nextBillingDate: {
-          gte: new Date(),
-          lte: sevenDaysFromNow,
-        },
-        client: clientWhereClause,
-      },
-      select: {
-        id: true,
-        clientId: true,
-        amount: true,
-        nextBillingDate: true,
-        client: {
-          select: {
-            contactName: true,
-            company: true,
-            status: true,
-          },
-        },
-      },
-      orderBy: { nextBillingDate: 'asc' },
-    });
-
-    // 3. Combinar e formatar alertas
-    const alerts = [
-      ...overdueClients.map((client) => ({
-        id: client.id,
-        type: 'overdue' as const,
-        clientName: client.contactName,
-        company: client.company,
-        status: client.status,
-        amount: client.subscriptions[0]
-          ? Number(client.subscriptions[0].amount)
-          : 0,
-        dueDate: client.subscriptions[0]?.nextBillingDate?.toISOString() || null,
-        message: `Cliente inadimplente`,
-      })),
-      ...upcomingPayments.map((sub) => ({
-        id: sub.id,
-        type: 'upcoming' as const,
-        clientName: sub.client.contactName,
-        company: sub.client.company,
-        status: sub.client.status,
-        amount: Number(sub.amount),
-        dueDate: sub.nextBillingDate?.toISOString() || null,
-        message: `Vencimento em ${Math.ceil((new Date(sub.nextBillingDate!).getTime() - Date.now()) / (1000 * 60 * 60 * 24))} dias`,
-      })),
-    ];
-
-    // 4. Paginar
-    const total = alerts.length;
-    const paginatedAlerts = alerts.slice((page - 1) * limit, page * limit);
-
-    return {
-      data: paginatedAlerts,
-      meta: {
-        total,
-        page,
-        limit,
-        totalPages: Math.ceil(total / limit),
-      },
-    };
-  }
-
-  /**
    * ✅ v2.53.0: Helper - Gera cache key para insights
    */
   private getInsightsCacheKey(userId: string, product?: ProductType): string {
@@ -933,19 +781,24 @@ export class DashboardService {
       `🧠 [Nexus Intel] Generating insights - User: ${userId}, Filters: ${JSON.stringify(filters)}`,
     );
 
-    // ✅ v2.53.0: Tentar buscar do cache primeiro
-    const cachedInsights = this.getFromCache(cacheKey);
-    if (cachedInsights) {
-      return cachedInsights;
+    // ✅ v2.55.0: Bypass cache quando refresh=true
+    if (filters.refresh) {
+      this.insightsCache.delete(cacheKey);
+      this.logger.log(`🔄 [Cache BYPASS] Refresh solicitado, gerando insights frescos...`);
+    } else {
+      const cachedInsights = this.getFromCache(cacheKey);
+      if (cachedInsights) {
+        return cachedInsights;
+      }
     }
 
     // Cache miss - gerar novos insights
     this.logger.log(`💨 [Cache MISS] Generating fresh insights...`);
 
-    try {
-      // Buscar estatísticas do dashboard
-      const stats = await this.getStats(userId, userRole, filters);
+    // ✅ v2.55.0: Buscar stats UMA vez (reutilizado no fallback)
+    const stats = await this.getStats(userId, userRole, filters);
 
+    try {
       // ✅ v2.51.0: Gerar insights via IA (MoM - sem período dinâmico)
       const prompt = getDashboardInsightsPrompt(
         stats,
@@ -991,8 +844,7 @@ export class DashboardService {
     } catch (error) {
       this.logger.error(`❌ [Nexus Intel] AI generation failed:`, error);
 
-      // Fallback to static insights based on simple rules
-      const stats = await this.getStats(userId, userRole, filters);
+      // Fallback to static insights based on simple rules (reusa stats acima)
 
       const fallbackResult: GenerateInsightsResponseDto = {
         insights: [
@@ -1042,18 +894,15 @@ export class DashboardService {
   }
 
   /**
-   * ✅ v2.52.0: Método consolidado para calcular MRR de um período
-   * Elimina duplicação de código entre MRR atual e MRR anterior
+   * ✅ v2.55.0: Método consolidado para calcular MRR (snapshot cumulativo)
    *
    * @param whereClause - Filtro de clientes (scoping por role, product, etc.)
-   * @param startDate - Data inicial do período (opcional)
-   * @param endDate - Data final do período (opcional)
-   * @returns MRR (Monthly Recurring Revenue) do período
+   * @param asOfDate - Se fornecido, retorna MRR cumulativo até aquela data
+   * @returns MRR (Monthly Recurring Revenue)
    */
   private async calculateMrrForPeriod(
     whereClause: any,
-    startDate?: Date,
-    endDate?: Date,
+    asOfDate?: Date,
   ): Promise<number> {
     const where: any = {
       ...whereClause,
@@ -1062,12 +911,9 @@ export class DashboardService {
       },
     };
 
-    // Se período especificado, adiciona filtro de createdAt
-    if (startDate && endDate) {
-      where.createdAt = {
-        gte: startDate,
-        lte: endDate,
-      };
+    // Se asOfDate fornecido, retorna snapshot cumulativo até aquela data
+    if (asOfDate) {
+      where.createdAt = { lte: asOfDate };
     }
 
     const clientsWithPlans = await this.prisma.client.findMany({
@@ -1078,7 +924,12 @@ export class DashboardService {
     });
 
     return clientsWithPlans.reduce(
-      (sum, client) => sum + Number(client.plan?.priceMonthly || 0),
+      (sum, client) => {
+        const monthly = Number(client.plan?.priceMonthly || 0);
+        // ✅ v2.55.0: Aplica desconto 10% para billing ANNUAL (regra de negócio v2.42.2)
+        const discount = client.billingCycle === 'ANNUAL' ? 0.9 : 1;
+        return sum + (monthly * discount);
+      },
       0,
     );
   }
