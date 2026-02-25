@@ -47,90 +47,45 @@ O **Gestor Nexus** é o sistema interno de gestão comercial e financeira da **N
 
 ### 📈 Status do Desenvolvimento
 
----
+#### Backend
+| Módulo | Endpoints | Features |
+|--------|-----------|----------|
+| **Health** | 1 | Health checks, readiness probe |
+| **Auth** | 3 | Login, refresh token, change password |
+| **Plans** | 3 | CRUD planos, filtro por produto |
+| **Users** | 10 | CRUD usuários, soft delete, hierarquia |
+| **Leads** | 5 | Funil vendas, lead scoring, conversão |
+| **Clients** | 7 | Gestão clientes, billing lifecycle |
+| **Finance** | 8 | MRR/ARR, inadimplência, aging report |
+| **Subscriptions** | 3 | Billing lifecycle, grace period, crons |
+| **Payments** | 7 | Gateways, stats, validação status |
+| **Tenants** | 11 | Multi-tenancy, métricas |
+| **Webhooks** | 3 | Asaas, AbacatePay, idempotência |
+| **Dashboard** | 1 | KPIs, Nexus Intel (AI insights) |
+| **Calendar** | 8 | Eventos recorrentes, Google Calendar sync |
+| **Sales AI** | 4 | Copiloto de vendas com IA |
 
-## ⚠️ CRITICAL BUG ALERT
+#### Frontend
+| Módulo | Features |
+|--------|----------|
+| **Dashboard** | KPIs, MRR graph, Nexus Intel, auto-refresh |
+| **Clientes** | Lista, filtros, billing anchor, reativação |
+| **Leads** | Kanban drag-and-drop, estágios, conversão |
+| **Financeiro** | Transações, inadimplência, CSV export |
+| **Calendar** | 4 views, recorrência, Google sync |
+| **Sales AI** | Chat, briefing, battlecard, roleplay |
+| **Configurações** | Usuários, integrações |
 
-### 🚨 VENCIMENTO Field Off by 1 Day (UNRESOLVED)
+#### Features
+- RBAC com 5 roles e scoping automático
+- JWT auth próprio (access + refresh tokens)
+- Billing lifecycle com grace period (7 dias)
+- Nexus Intel (AI insights via Groq)
+- Webhooks (Asaas, AbacatePay) com idempotência
+- Google Calendar sync (OAuth2)
+- Soft delete, transações Prisma, validação Zod
 
-**Status**: 🔴 **CRITICAL** - Multiple fix attempts failed (v2.39.3, v2.39.4, v2.39.5)
-
-**Problem**: When converting lead to client, the VENCIMENTO (next payment due date) displays 1 day earlier than expected across ALL billing cycles.
-
-**Example**:
-- Input: firstPaymentDate = 10/02/2026 (MONTHLY plan)
-- Expected: VENCIMENTO = 10/03/2026
-- Actual: VENCIMENTO = 09/03/2026 ❌
-
-**Impact**: Affects 100% of client conversions, causes incorrect billing dates
-
-**For complete technical details**, see:
-- `CLAUDE.md` → "Known Critical Issues" section
-- `CHANGELOG.md` → v2.39.3, v2.39.4, v2.39.5 entries
-
-**Files Involved**:
-- `/apps/api/src/modules/leads/leads.service.ts` (payment creation)
-- `/apps/api/src/modules/clients/clients.service.ts` (VENCIMENTO calculation)
-
----
-
-#### ✅ Backend Core (Janeiro 2026)
-| Módulo | Status | Endpoints | Features |
-|--------|--------|-----------|----------|
-| **Health** | ✅ Completo | 1 | Health checks, readiness probe |
-| **Plans** | ✅ Completo | 3 | CRUD planos, filtro por produto |
-| **Users** | ✅ Completo | 10 | CRUD usuários, soft delete, hierarquia |
-| **Leads** | ✅ Completo | 5 | Funil vendas, conversão tracking |
-| **Clients** | ✅ Completo | 7 | Gestão clientes, conversão de lead |
-| **Payments** | ✅ Completo | 7 | Financeiro, stats, validação status |
-| **Tenants** | ✅ Completo | 11 | Multi-tenancy, métricas, status management |
-| **Webhooks** | ✅ Completo | 3 | Clerk, Asaas, AbacatePay, idempotência |
-| **Dashboard** | ✅ Completo | 1 | KPIs, gráficos, métricas agregadas |
-| **Calendar** | ✅ Completo | 8 | Eventos recorrentes, Google Calendar sync |
-
-**Total**: 57 endpoints REST implementados
-
-**Build Status**:
-- ✅ **API Build**: 0 erros TypeScript (corrigidos 102 erros em 16/01/2026)
-- ✅ **Web Build**: 0 erros TypeScript
-- ✅ **Docker Images**: Buildadas e prontas para deploy
-
-#### ✅ Frontend Base (Janeiro 2026)
-| Módulo | Status | Features |
-|--------|--------|----------|
-| **Setup** | ✅ Completo | Vite + React 18 + TypeScript |
-| **Autenticação** | ✅ Completo | Clerk SDK, pt-BR, UserButton |
-| **Layout** | ✅ Completo | AppLayout, Sidebar, Header |
-| **Estado** | ✅ Completo | Zustand (global), TanStack Query (server) |
-| **Roteamento** | ✅ Completo | React Router, rotas protegidas |
-| **Estilização** | ✅ Completo | Tailwind CSS, tema customizado |
-| **Dashboard** | ✅ Completo | KPIs, gráficos Recharts, métricas reais |
-| **Clientes** | ⏳ Básico | Lista e formulário (sem detalhes) |
-| **Leads** | ✅ Completo | Kanban drag-and-drop, estágios customizados, conversão |
-| **Financeiro** | ⏳ Básico | Dashboard de pagamentos |
-| **Calendar** | ✅ Completo | 4 views, recorrência, Google sync |
-
-**Progresso Frontend**: 35% completo
-
-**Próximo**: Completar módulos de Clientes, Leads e Financeiro
-
-#### 🎯 Features Implementadas
-- ✅ **RBAC completo** - 5 roles com scoping automático
-- ✅ **Validação Zod** - Todos os DTOs validados
-- ✅ **Soft Delete** - Dados críticos preservados
-- ✅ **Transações Prisma** - Operações atômicas (conversão lead → cliente)
-- ✅ **Status Transitions** - Validação de fluxos (payments)
-- ✅ **Audit Logging** - Logger com emojis indicativos
-- ✅ **Retry Logic** - Resiliência em operações críticas
-- ✅ **CPF/CNPJ Validation** - Com auto-cleanup de formatação
-- ✅ **Hierarchical Access** - GESTOR → VENDEDOR relationships
-- ✅ **Statistics Aggregation** - Dashboards financeiros
-- ✅ **Webhooks Integration** - Clerk, Asaas, AbacatePay com idempotência
-- ✅ **Signature Validation** - SVIX, access token, HMAC SHA256
-- ✅ **User Sync** - Sincronização automática Clerk → Database
-- ✅ **Calendar Module** - Eventos recorrentes (RRULE), 4 visualizações
-- ✅ **Google Calendar Sync** - OAuth2, sincronização bidirecional
-- ✅ **Docker Stack** - Infraestrutura completa para deploy
+> Para o histórico completo de versões, consulte [CHANGELOG.md](./CHANGELOG.md)
 
 ---
 
@@ -146,7 +101,7 @@ O **Gestor Nexus** é o sistema interno de gestão comercial e financeira da **N
 │  │   (React)       │───▶│   (NestJS)      │───▶│   (PostgreSQL)  │         │
 │  │                 │    │                 │    │                 │         │
 │  │  • Vite         │    │  • REST API     │    │  • Prisma ORM   │         │
-│  │  • TypeScript   │    │  • Clerk Auth   │    │  • Migrations   │         │
+│  │  • TypeScript   │    │  • JWT Auth     │    │  • Migrations   │         │
 │  │  • Tailwind     │    │  • Zod Valid.   │    │  • Soft Delete  │         │
 │  │  • Zustand      │    │  • RBAC         │    │  • Audit Log    │         │
 │  │  • React Query  │    │  • Webhooks     │    │                 │         │
@@ -157,10 +112,10 @@ O **Gestor Nexus** é o sistema interno de gestão comercial e financeira da **N
 │  ┌───────────────────────────────┴───────────────────────────────┐         │
 │  │                      INTEGRAÇÕES EXTERNAS                      │         │
 │  ├───────────────────┬───────────────────┬───────────────────────┤         │
-│  │   Clerk Auth      │   Pagamentos      │   Inteligência IA     │         │
-│  │   • SSO/MFA       │   • AbacatePay    │   • Groq Analytics    │         │
-│  │   • RBAC          │   • Asaas         │   • Gemini Sales AI   │         │
-│  │   • Webhooks      │   • Webhooks      │   • OpenRouter        │         │
+│  │   JWT Auth        │   Pagamentos      │   Inteligência IA     │         │
+│  │   • Access Token  │   • AbacatePay    │   • Groq Analytics    │         │
+│  │   • Refresh Token │   • Asaas         │   • Gemini Sales AI   │         │
+│  │   • RBAC          │   • Webhooks      │   • OpenRouter        │         │
 │  └───────────────────┴───────────────────┴───────────────────────┘         │
 │                                                                              │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -179,7 +134,8 @@ O **Gestor Nexus** é o sistema interno de gestão comercial e financeira da **N
 | Prisma | 5+ | ORM | ✅ |
 | PostgreSQL | 16+ | Banco de dados | ✅ |
 | Zod | 3+ | Validação | ✅ |
-| Clerk | Latest | Autenticação | ✅ |
+| JWT (jsonwebtoken) | 9+ | Autenticação | ✅ |
+| Bcrypt | 5+ | Hash de senhas | ✅ |
 
 ### Frontend
 | Tecnologia | Versão | Uso | Status |
@@ -191,7 +147,7 @@ O **Gestor Nexus** é o sistema interno de gestão comercial e financeira da **N
 | Zustand | 5+ | Estado global | ✅ |
 | TanStack Query | 5+ | Server state | ✅ |
 | React Router | 7+ | Roteamento | ✅ |
-| Clerk React | 5+ | Autenticação | ✅ |
+| AuthContext | - | Autenticação JWT | ✅ |
 | Axios | 1+ | HTTP client | ✅ |
 | React Hook Form | 7+ | Formulários | ⏳ |
 
@@ -256,10 +212,9 @@ pnpm dev
 # Banco de Dados
 DATABASE_URL="postgresql://postgres:postgres@localhost:5432/gestor_nexus"
 
-# Clerk (Autenticação)
-CLERK_SECRET_KEY="sk_test_..."
-CLERK_PUBLISHABLE_KEY="pk_test_..."
-CLERK_WEBHOOK_SECRET="whsec_..."
+# JWT Auth
+JWT_SECRET="your_jwt_secret"
+JWT_REFRESH_SECRET="your_refresh_secret"
 
 # Pagamentos (Produção)
 ABACATEPAY_API_KEY=""
@@ -415,205 +370,23 @@ curl -s https://apigestor.nexusatemporal.com/api/v1/health | jq
 
 ---
 
-## ⚠️ Known Issues (v2.33.1)
-
-### 🐛 Problemas no Módulo de Leads
-
-**Status Atual**: ✅ **CNPJ validation UX melhorada na v2.33.1** | ✅ **CNPJ duplicate check corrigido na v2.33.0** | ✅ **Drag-and-drop corrigido na v2.23.0** | ⚠️ **1 issue de UX pendente**
-
-#### ✅ ~~Issue #0: 400 Bad Request ao Criar Lead~~ (RESOLVIDO em v2.15.3)
-- ~~**Sintoma**: Criação de lead retornava erro "Validation failed" com 400 status code~~
-- ~~**Causa**: `vendedorId` e `interestPlanId` eram obrigatórios mas frontend enviava nomes de display~~
-- ✅ **CORRIGIDO**: Campos tornados opcionais, backend auto-atribui vendedor
-- ✅ **RESULTADO**: Criação de leads funcionando normalmente
-- 📄 **Commit**: v2.15.3 - "enhance(leads): mandatory fields + ClientRole enum"
-
-#### ✅ ~~Issue #1: PATCH /leads/:id Retornando 500 Error~~ (RESOLVIDO em v2.15.2)
-- ~~**Sintoma**: Drag-and-drop, edição de leads e mudança de stage retornavam 500 error~~
-- ~~**Causa**: Campo `origin` no DTO sendo enviado para Prisma (campo não existe no schema)~~
-- ~~**Causa #2**: UUID validation falhando em strings vazias~~
-- ✅ **CORRIGIDO**: Removido campo `origin` antes do update + preprocessing de strings vazias
-- ✅ **RESULTADO**: Drag-and-drop, edição e mudança de stage funcionando corretamente
-- 📄 **Commit**: `3fcad6f` - "fix(leads): fix 500 error on PATCH"
-
-#### ✅ ~~Issue #2: Drag-and-Drop de Leads (Case Sensitivity)~~ (RESOLVIDO em v2.23.0)
-- ~~**Sintoma**: Lead não move entre colunas do Kanban (sem erros no console)~~
-- ~~**Causa**: Frontend usava mapeamento hardcodado `mapApiStatusToStage()` ao invés de dados do backend~~
-- ~~**Causa Raiz**: 4 bugs interconectados (hardcoded mapping, missing stage relation, interface sem stageId, localStorage desconectado)~~
-- ✅ **CORRIGIDO**: Removido mapeamento hardcodado, agora usa `apiLead.stage?.name` do backend
-- ✅ **RESULTADO**: Drag-and-drop funciona corretamente, estágios customizados visíveis
-- 📄 **Commit**: `e933b37` - "fix(leads): integrate stage relation from backend (v2.23.0)"
-- 📄 **Detalhes**: [CHANGELOG.md v2.23.0](./CHANGELOG.md#2230---2026-01-30---drag-and-drop-integration-fix-stage-relation-)
-
-#### ✅ ~~Issue #3: CNPJ Validation Não Funcionando~~ (RESOLVIDO em v2.33.0)
-- ~~**Sintoma**: Usuário criava múltiplos leads com mesmo CNPJ, sem aviso ou bloqueio~~
-- ~~**Causa #1**: URL encoding (slashes em CNPJ causavam 404)~~
-- ~~**Causa #2**: Backend usava Prisma `contains` que não comparava números (formatação diferente)~~
-- ✅ **CORRIGIDO**: Backend usa SQL `REGEXP_REPLACE` para remover formatação antes de comparar
-- ✅ **RESULTADO**: Validação de CNPJ duplicado funciona corretamente (leads e clientes)
-- 📄 **Commit**: v2.33.0 - "fix(leads): fix CNPJ duplicate validation using SQL regex"
-
-#### ✅ ~~Issue #4: Alertas Duplicados na Validação de CNPJ~~ (RESOLVIDO em v2.33.1)
-- ~~**Sintoma**: Dois alertas apareciam simultaneamente ("CNPJ já cadastrado!" + "⚠️ CNPJ já cadastrado no sistema")~~
-- ~~**Causa**: Alerta visual no onBlur + mensagem de erro no submit + console spam~~
-- ✅ **CORRIGIDO**: Removido alerta visual, validação silenciosa, mensagem única no submit
-- ✅ **RESULTADO**: UX limpa e profissional, mensagem única "⚠️ CNPJ já cadastrado no sistema"
-- 📄 **Commit**: v2.33.1 - "fix(leads): improve CNPJ validation UX - remove duplicate alert and debug logs"
-
-#### Issue #5: "Configurar Pipeline" Não Salva no Banco
-- **Sintoma**: Mudanças no pipeline são perdidas após refresh
-- **Causa**: Frontend salva apenas em localStorage, nunca chama API
-- **Impacto**: Configurações não sincronizam entre usuários/dispositivos
-- **Backend**: API `/funnel-stages` completa mas não utilizada
-- **Solução**: Criar `funnelStagesApi` client e hooks React Query
-
-📄 **Detalhes completos**:
-- [CHANGELOG.md v2.33.1](./CHANGELOG.md#2331---2026-02-03---leads-module-cnpj-validation-ux-improvements-) (CNPJ UX improvements)
-- [CHANGELOG.md v2.23.0](./CHANGELOG.md#2230---2026-01-30---drag-and-drop-integration-fix-stage-relation-) (Drag-and-drop fix)
-- [CHANGELOG.md v2.15.3](./CHANGELOG.md#v2153-2026-01-29---leads-module-form-validation-enhancements-) (Validação de formulário)
-- [CHANGELOG.md v2.15.2](./CHANGELOG.md#v2152-2026-01-29---leads-module-patch-500-error-fix-) (Correção do erro 500)
-- [CLAUDE.md - Common Issues](./CLAUDE.md#issue-cnpj-validation-showing-duplicate-alerts-fixed-in-v2331) (Documentação técnica completa)
-
----
-
 ## 📚 Documentação
 
-| Documento | Descrição | Status |
-|-----------|-----------|--------|
-| [CLAUDE.md](./Docs_GM_NEXUS/CLAUDE.md) | Instruções para Claude Code | ✅ |
-| [CHANGELOG.md](./CHANGELOG.md) | Histórico de mudanças | ✅ 16/01/2026 |
-| [DEPLOY_PORTAINER.md](./DEPLOY_PORTAINER.md) | **🚀 Guia Deploy via Portainer** | ✅ Novo |
-| [README.md](./Docs_GM_NEXUS/README.md) | Documentação do projeto | ✅ |
-| [ARCHITECTURE.md](./Docs_GM_NEXUS/ARCHITECTURE.md) | Arquitetura detalhada | ✅ |
-| [DATABASE.md](./Docs_GM_NEXUS/DATABASE.md) | Schema e modelos Prisma | ✅ |
-| [API.md](./Docs_GM_NEXUS/API.md) | Endpoints REST | ✅ |
-| [GUIA_DE_DEPLOY.md](./Docs_GM_NEXUS/GUIA_DE_DEPLOY.md) | Deploy Docker Swarm | ✅ |
-
-### 📁 Estrutura dos Módulos Implementados
-
-```
-apps/api/src/modules/
-├── health/
-│   ├── health.controller.ts
-│   ├── health.module.ts
-│   └── health.service.ts
-│
-├── plans/
-│   ├── dto/
-│   │   ├── create-plan.dto.ts
-│   │   └── update-plan.dto.ts
-│   ├── plans.controller.ts
-│   ├── plans.module.ts
-│   └── plans.service.ts
-│
-├── users/
-│   ├── dto/
-│   │   ├── create-user.dto.ts
-│   │   └── update-user.dto.ts
-│   ├── users.controller.ts (10 endpoints)
-│   ├── users.module.ts
-│   └── users.service.ts (8 métodos, RBAC completo)
-│
-├── leads/
-│   ├── dto/
-│   │   ├── create-lead.dto.ts
-│   │   └── update-lead.dto.ts
-│   ├── leads.controller.ts (5 endpoints)
-│   ├── leads.module.ts
-│   └── leads.service.ts (6 métodos, conversão tracking)
-│
-├── clients/
-│   ├── dto/
-│   │   ├── create-client.dto.ts
-│   │   └── update-client.dto.ts
-│   ├── clients.controller.ts (7 endpoints)
-│   ├── clients.module.ts
-│   └── clients.service.ts (7 métodos, transações)
-│
-├── payments/
-│   ├── dto/
-│   │   ├── create-payment.dto.ts
-│   │   └── update-payment.dto.ts
-│   ├── payments.controller.ts (7 endpoints)
-│   ├── payments.module.ts
-│   └── payments.service.ts (9 métodos, stats)
-│
-├── tenants/
-│   ├── dto/
-│   │   ├── create-tenant.dto.ts
-│   │   └── update-tenant.dto.ts
-│   ├── tenants.controller.ts (11 endpoints)
-│   ├── tenants.module.ts
-│   └── tenants.service.ts (10 métodos, métricas)
-│
-└── webhooks/
-    ├── dto/
-    │   ├── clerk-webhook.dto.ts
-    │   ├── asaas-webhook.dto.ts
-    │   └── abacatepay-webhook.dto.ts
-    ├── services/
-    │   ├── idempotency.service.ts
-    │   ├── clerk-webhook.service.ts
-    │   ├── asaas-webhook.service.ts
-    │   └── abacatepay-webhook.service.ts
-    ├── webhooks.controller.ts (3 endpoints públicos)
-    └── webhooks.module.ts
-```
-
-### Docker / Infraestrutura
-
-| Arquivo | Descrição |
-|---------|-----------|
-| [docker/docker-compose.yml](./docker/docker-compose.yml) | Stack para Portainer |
-| [docker/Dockerfile.api](./docker/Dockerfile.api) | Build do backend |
-| [docker/Dockerfile.web](./docker/Dockerfile.web) | Build do frontend |
-| [docker/nginx.conf](./docker/nginx.conf) | Config do NGINX |
-
-### Agentes de IA
-
-| Agente | Arquivo | Uso |
-|--------|---------|-----|
-| Arquitetura | [agents/architecture-planning.md](./agents/architecture-planning.md) | Design de sistema |
-| Backend | [agents/backend-development.md](./agents/backend-development.md) | APIs |
-| Frontend | [agents/frontend-development.md](./agents/frontend-development.md) | UI |
-| Database | [agents/database-development.md](./agents/database-development.md) | Schema |
-| Segurança | [agents/security-check.md](./agents/security-check.md) | Code review |
-| QA | [agents/qa-testing.md](./agents/qa-testing.md) | Testes |
-
----
-
-## 🎯 Próximos Passos
-
-### Frontend (Não Iniciado)
-3. **Configuração Base**
-   - [ ] Setup Vite + React + TypeScript
-   - [ ] Configuração Tailwind CSS
-   - [ ] Setup Zustand para estado global
-   - [ ] Configuração React Query
-   - [ ] Integração Clerk (frontend)
-
-4. **Módulos de Interface**
-   - [ ] Dashboard (métricas, gráficos)
-   - [ ] Gestão de Clientes (tabelas, formulários)
-   - [x] Funil de Leads (Kanban) ✅ v2.23.0
-   - [ ] Módulo Financeiro (aging report)
-   - [ ] Configurações e RBAC
-
-### Testes e Deploy
-5. **Qualidade**
-   - [ ] Testes unitários (Vitest)
-   - [ ] Testes E2E (Playwright)
-   - [ ] CI/CD GitHub Actions
-   - [ ] Docker optimization
+| Documento | Descrição |
+|-----------|-----------|
+| [CLAUDE.md](./CLAUDE.md) | Instruções para Claude Code |
+| [CHANGELOG.md](./CHANGELOG.md) | Histórico completo de versões |
+| [Docs_GM_NEXUS/](./Docs_GM_NEXUS/) | Documentação detalhada (arquitetura, API, DB, deploy, agents) |
+| [prints/](./prints/) | Prompts de referência para módulos |
 
 ---
 
 ## 🔐 Segurança
 
 ### Autenticação
-- SSO via Clerk com MFA disponível
-- JWT tokens com refresh automático
-- Session management seguro
+- JWT próprio com access token (1h) e refresh token (7d)
+- Bcrypt para hashing de senhas
+- Refresh token rotation
 
 ### Autorização (RBAC)
 | Role | Acesso |
@@ -673,6 +446,6 @@ Este projeto é **proprietário** e de uso exclusivo da **Nexus Atemporal**.
 
 **Desenvolvido com ❤️ por [Nexus Atemporal](https://nexusatemporal.com.br)**
 
-*Última atualização: 29 de Janeiro de 2026*
+*Última atualização: 25 de Fevereiro de 2026*
 
 </div>
