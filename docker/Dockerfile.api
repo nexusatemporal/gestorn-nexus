@@ -1,0 +1,92 @@
+# ============================================================================
+# GESTOR NEXUS - Dockerfile API (NestJS)
+# ============================================================================
+#
+# Build from root context: docker build -f docker/Dockerfile.api -t gestor-nexus-api .
+#
+# IMPORTANTE: Sempre usar --no-cache em produção!
+#   docker build --no-cache -f docker/Dockerfile.api -t gestor-nexus-api .
+#
+# ============================================================================
+
+# -----------------------------------------------------------------------------
+# Stage 1: Dependencies
+# -----------------------------------------------------------------------------
+FROM node:20-alpine AS deps
+
+WORKDIR /app
+
+# Copiar arquivos de dependências da API
+COPY apps/api/package.json apps/api/package-lock.json ./
+
+# Instalar dependências de produção
+RUN npm ci --only=production --ignore-scripts
+
+# -----------------------------------------------------------------------------
+# Stage 2: Builder
+# -----------------------------------------------------------------------------
+FROM node:20-alpine AS builder
+
+# Instalar OpenSSL para Prisma
+RUN apk add --no-cache openssl openssl-dev
+
+WORKDIR /app
+
+# Copiar arquivos de dependências da API
+COPY apps/api/package.json apps/api/package-lock.json ./
+
+# Instalar TODAS as dependências (incluindo devDependencies para build)
+RUN npm ci --ignore-scripts
+
+# Copiar código fonte da API
+COPY apps/api/ ./
+
+# Gerar Prisma Client
+RUN npx prisma generate
+
+# Build da aplicação
+RUN npm run build
+
+# -----------------------------------------------------------------------------
+# Stage 3: Runner (Produção)
+# -----------------------------------------------------------------------------
+FROM node:20-alpine AS runner
+
+WORKDIR /app
+
+# Criar usuário não-root
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 nestjs
+
+# Instalar apenas o necessário para produção (curl para health checks e OpenSSL para Prisma)
+RUN apk add --no-cache curl openssl openssl-dev
+
+# Copiar node_modules de produção do stage deps
+COPY --from=deps --chown=nestjs:nodejs /app/node_modules ./node_modules
+
+# Copiar Prisma Client gerado do builder
+COPY --from=builder --chown=nestjs:nodejs /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder --chown=nestjs:nodejs /app/node_modules/@prisma/client ./node_modules/@prisma/client
+
+# Copiar arquivos buildados
+COPY --from=builder --chown=nestjs:nodejs /app/dist ./dist
+COPY --from=builder --chown=nestjs:nodejs /app/package.json ./
+COPY --from=builder --chown=nestjs:nodejs /app/prisma ./prisma
+
+# Variáveis de ambiente
+ENV NODE_ENV=production
+ENV PORT=3001
+
+# Expor porta
+EXPOSE 3001
+
+# Usuário não-root
+USER nestjs
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+  CMD curl -f http://localhost:3001/api/v1/health || exit 1
+
+# Comando de inicialização
+# Primeiro roda migrations, depois inicia o app
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main.js"]

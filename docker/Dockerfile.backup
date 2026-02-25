@@ -1,0 +1,94 @@
+# ============================================================================
+# GESTOR NEXUS - Dockerfile para Backup Service
+# ============================================================================
+# Container Alpine com PostgreSQL client, AWS CLI e Cron para backups
+# ============================================================================
+
+FROM alpine:3.19
+
+# Instalar dependências
+RUN apk add --no-cache \
+    bash \
+    postgresql16-client \
+    aws-cli \
+    tar \
+    gzip \
+    findutils \
+    dcron \
+    tzdata \
+    curl
+
+# Configurar timezone
+ENV TZ=America/Sao_Paulo
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
+# Criar diretórios
+RUN mkdir -p /backups /restore /scripts /app
+
+# Copiar scripts
+COPY scripts/backup.sh /scripts/backup.sh
+COPY scripts/restore.sh /scripts/restore.sh
+
+# Dar permissões de execução
+RUN chmod +x /scripts/backup.sh /scripts/restore.sh
+
+# Configurar cron para backup diário às 03:00 (horário de Brasília)
+RUN echo "0 3 * * * /scripts/backup.sh >> /var/log/backup.log 2>&1" > /etc/crontabs/root
+
+# Criar arquivo de log
+RUN touch /var/log/backup.log
+
+# Healthcheck
+HEALTHCHECK --interval=1h --timeout=10s --start-period=10s --retries=3 \
+  CMD [ -f /var/log/backup.log ] && tail -1 /var/log/backup.log | grep -q "BACKUP CONCLUÍDO"
+
+# Script de entrypoint
+RUN echo '#!/bin/bash' > /entrypoint.sh && \
+    echo 'set -e' >> /entrypoint.sh && \
+    echo 'echo "====================================="' >> /entrypoint.sh && \
+    echo 'echo "  GESTOR NEXUS - BACKUP SERVICE"' >> /entrypoint.sh && \
+    echo 'echo "====================================="' >> /entrypoint.sh && \
+    echo 'echo "Timezone: $(date +%Z)"' >> /entrypoint.sh && \
+    echo 'echo "Cron Schedule: Daily at 03:00"' >> /entrypoint.sh && \
+    echo 'echo "S3 Endpoint: ${IDRIVE_ENDPOINT}"' >> /entrypoint.sh && \
+    echo 'echo "S3 Bucket: ${IDRIVE_BUCKET}"' >> /entrypoint.sh && \
+    echo 'echo ""' >> /entrypoint.sh && \
+    echo '' >> /entrypoint.sh && \
+    echo '# Configurar AWS CLI com credenciais IDrive e2' >> /entrypoint.sh && \
+    echo 'mkdir -p ~/.aws' >> /entrypoint.sh && \
+    echo 'cat > ~/.aws/credentials <<EOF' >> /entrypoint.sh && \
+    echo '[default]' >> /entrypoint.sh && \
+    echo 'aws_access_key_id = ${AWS_ACCESS_KEY_ID}' >> /entrypoint.sh && \
+    echo 'aws_secret_access_key = ${AWS_SECRET_ACCESS_KEY}' >> /entrypoint.sh && \
+    echo 'EOF' >> /entrypoint.sh && \
+    echo '' >> /entrypoint.sh && \
+    echo 'cat > ~/.aws/config <<EOF' >> /entrypoint.sh && \
+    echo '[default]' >> /entrypoint.sh && \
+    echo 'region = ${IDRIVE_REGION}' >> /entrypoint.sh && \
+    echo 'output = json' >> /entrypoint.sh && \
+    echo 'EOF' >> /entrypoint.sh && \
+    echo '' >> /entrypoint.sh && \
+    echo 'echo "✓ AWS CLI configurado"' >> /entrypoint.sh && \
+    echo 'echo ""' >> /entrypoint.sh && \
+    echo '' >> /entrypoint.sh && \
+    echo '# Criar bucket se não existir' >> /entrypoint.sh && \
+    echo 'aws s3 mb "s3://${IDRIVE_BUCKET}" \' >> /entrypoint.sh && \
+    echo '  --endpoint-url="${IDRIVE_ENDPOINT}" \' >> /entrypoint.sh && \
+    echo '  --region="${IDRIVE_REGION}" 2>/dev/null || true' >> /entrypoint.sh && \
+    echo 'echo "✓ Bucket verificado"' >> /entrypoint.sh && \
+    echo 'echo ""' >> /entrypoint.sh && \
+    echo '' >> /entrypoint.sh && \
+    echo '# Executar backup inicial (opcional)' >> /entrypoint.sh && \
+    echo 'if [ "${RUN_BACKUP_ON_START}" = "true" ]; then' >> /entrypoint.sh && \
+    echo '  echo "Executando backup inicial..."' >> /entrypoint.sh && \
+    echo '  /scripts/backup.sh' >> /entrypoint.sh && \
+    echo 'fi' >> /entrypoint.sh && \
+    echo '' >> /entrypoint.sh && \
+    echo '# Iniciar cron em foreground' >> /entrypoint.sh && \
+    echo 'echo "Iniciando cron daemon..."' >> /entrypoint.sh && \
+    echo 'echo "Próximo backup: 03:00 (horário de Brasília)"' >> /entrypoint.sh && \
+    echo 'echo ""' >> /entrypoint.sh && \
+    echo 'crond -f -l 2' >> /entrypoint.sh && \
+    chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]

@@ -1,0 +1,1143 @@
+// ══════════════════════════════════════════════════════════════════════════════
+// 🗄️ GESTOR NEXUS - SCHEMA PRISMA v1.0
+// ══════════════════════════════════════════════════════════════════════════════
+// Sistema interno de gestão comercial/financeira da Nexus Atemporal
+// Produtos gerenciados: One Nexus (CRM clínicas) e Locadoras (gestão equipamentos)
+// ══════════════════════════════════════════════════════════════════════════════
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 🔐 AUTENTICAÇÃO E AUTORIZAÇÃO (RBAC)
+// ══════════════════════════════════════════════════════════════════════════════
+
+/// Usuários internos do Gestor Nexus (equipe Nexus Atemporal)
+model User {
+  id              String    @id @default(cuid())
+  clerkId         String?   @unique /// ID do Clerk (mantido temporariamente para migração)
+  email           String    @unique
+  name            String
+  avatar          String?
+  role            UserRole  @default(VENDEDOR)
+  isActive        Boolean   @default(true)
+  lastLoginAt     DateTime?
+
+  // Auth próprio (v2.54.0)
+  passwordHash    String?   /// Hash bcrypt da senha
+  refreshToken    String?   /// Refresh token atual (para invalidação)
+
+  // Hierarquia (Gestor -> Vendedores)
+  gestorId        String?
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relacionamentos
+  gestor              User?            @relation("GestorVendedores", fields: [gestorId], references: [id])
+  vendedores          User[]           @relation("GestorVendedores")
+  permissions         UserPermission[]
+  assignedLeads       Lead[]           @relation("AssignedVendedor")
+  assignedClients     Client[]         @relation("AssignedVendedor")
+  interactions        Interaction[]
+  impersonateLogs     ImpersonateLog[]
+  notifications       Notification[]
+  chatMessages        ChatMessage[]    @relation("SentMessages")
+  aiConversations     AIConversation[]
+  calendarEvents      CalendarEvent[]
+  googleCalendarToken GoogleCalendarToken?
+  auditLogs           AuditLog[]
+  createdPayments     Payment[]
+  financeTransactions FinanceTransaction[] @relation("FinanceCreator")
+
+  @@index([clerkId])
+  @@index([email])
+  @@index([role])
+  @@index([gestorId])
+}
+
+/// Perfis de acesso do sistema
+enum UserRole {
+  SUPERADMIN      /// Acesso total, gerencia usuários/configurações/integrações
+  ADMINISTRATIVO  /// Financeiro completo, relatórios/métricas
+  GESTOR          /// Gerencia time vendas, performance vendedores/leads
+  VENDEDOR        /// Leads/clientes, chat, SEM financeiro
+  DESENVOLVEDOR   /// RBAC granular - impersonate SIM, financeiro NÃO
+}
+
+/// Permissões granulares por usuário
+model UserPermission {
+  id         String   @id @default(cuid())
+  userId     String
+  module     Module
+  canView    Boolean  @default(false)
+  canCreate  Boolean  @default(false)
+  canEdit    Boolean  @default(false)
+  canDelete  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, module])
+  @@index([userId])
+}
+
+/// Módulos do sistema para controle de permissão
+enum Module {
+  DASHBOARD
+  CLIENTS_ONE_NEXUS
+  CLIENTS_LOCADORAS
+  LEADS
+  FINANCE
+  CHAT
+  CALENDAR
+  SALES_AI
+  SETTINGS
+  AUDIT_LOG
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 👥 CLIENTES E TENANTS
+// ══════════════════════════════════════════════════════════════════════════════
+
+/// Clientes assinantes dos produtos SaaS
+model Client {
+  id                  String        @id @default(cuid())
+
+  // Dados obrigatórios
+  contactName         String        /// Nome do contato/responsável
+  company             String        /// Nome da empresa/clínica
+  cpfCnpj             String        @unique /// CPF ou CNPJ (11 ou 14 dígitos)
+  email               String
+  phone               String
+  role                ClientRole?   /// Cargo do responsável
+
+  // Dados do produto
+  productType         ProductType
+  planId              String
+  paymentMethod       PaymentMethod? @default(PIX)
+  paymentGateway      PaymentGateway? /// Gateway utilizado
+
+  // Status e datas
+  status              ClientStatus  @default(EM_TRIAL)
+  trialEndsAt         DateTime?     /// Data de fim do trial
+
+  // Relacionamentos
+  vendedorId          String
+  tenantId            String?       /// ID do tenant (opcional no momento da criação)
+  leadId              String?       /// ID do lead de origem (para conversão)
+
+  // Notas
+  notes               String?       @db.Text
+
+  // === DADOS DA CONVERSÃO (Handoff Sales → CS/Implantação) ===
+  dealSummary           String?       @db.Text /// Resumo da negociação (texto ou gerado por IA)
+  numberOfUsers         Int           @default(1)
+  billingCycle          BillingCycle  @default(MONTHLY)
+  closedAt              DateTime      @default(now()) @db.Timestamptz
+  firstPaymentDate      DateTime?     @db.Timestamptz
+  implementationNotes   String?       @db.Text
+
+  // === BILLING LIFECYCLE (v2.40.0) ===
+  activeSubscriptionId  String?       @unique /// Subscription ativa (referência rápida)
+
+  // === RASTREABILIDADE ===
+  convertedFromLeadId   String?       @unique
+
+  createdAt           DateTime      @default(now()) @db.Timestamptz
+  updatedAt           DateTime      @updatedAt @db.Timestamptz
+
+  // Relations
+  plan                Plan              @relation(fields: [planId], references: [id])
+  vendedor            User              @relation("AssignedVendedor", fields: [vendedorId], references: [id])
+  tenant              Tenant?
+  payments            Payment[]
+  interactions        Interaction[]
+  impersonateLogs     ImpersonateLog[]
+  chatConversations   ChatConversation[]
+  upgradeHistory      UpgradeHistory[]
+  calendarEvents      CalendarEvent[]   @relation("ClientCalendarEvents")
+  auditLogs           AuditLog[]
+  financeTransactions FinanceTransaction[]
+  convertedFromLead   Lead?             @relation("ConvertedLead", fields: [convertedFromLeadId], references: [id])
+  subscriptions       Subscription[]    /// v2.40.0 - Histórico de assinaturas
+
+  @@index([productType])
+  @@index([status])
+  @@index([vendedorId])
+  @@index([planId])
+  @@index([cpfCnpj])
+}
+
+/// Cargo do responsável pelo cliente
+enum ClientRole {
+  SOCIO_FUNDADOR
+  CEO_PRESIDENTE
+  VP_CLEVEL
+  DIRETOR
+  GERENTE
+  COORDENADOR
+  SUPERVISOR
+  ANALISTA
+  RECEPCIONISTA
+  OUTRO
+}
+
+/// Produtos SaaS gerenciados
+enum ProductType {
+  ONE_NEXUS   /// CRM para clínicas estéticas
+  LOCADORAS   /// Gestão de locação de equipamentos
+}
+
+/// Status do cliente
+enum ClientStatus {
+  ATIVO         /// Pagamentos em dia
+  INADIMPLENTE  /// Pagamento atrasado (até 30 dias)
+  BLOQUEADO     /// Acesso suspenso (30-120 dias)
+  CANCELADO     /// Contrato encerrado
+  EM_TRIAL      /// Período de teste
+}
+
+/// Método de pagamento
+enum PaymentMethod {
+  PIX         /// Via AbacatePay
+  CARTAO      /// Via Asaas
+  BOLETO      /// Via Asaas
+  TRANSFERENCIA
+}
+
+/// Ciclo de cobrança
+enum BillingCycle {
+  MONTHLY     /// Mensal
+  QUARTERLY   /// Trimestral
+  SEMIANNUAL  /// Semestral
+  ANNUAL      /// Anual
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 🔄 SUBSCRIPTION (Ciclo de Vida da Assinatura) - v2.40.0
+// ══════════════════════════════════════════════════════════════════════════════
+
+/// Status da assinatura
+enum SubscriptionStatus {
+  TRIALING    /// Em período de trial
+  ACTIVE      /// Ativa e em dia
+  PAST_DUE    /// Pagamento atrasado (dentro do grace period)
+  CANCELED    /// Cancelada por inadimplência ou pedido
+  EXPIRED     /// Expirou (plano anual que terminou)
+}
+
+/// Motivo do cancelamento
+enum CancellationReason {
+  PAYMENT_FAILURE    /// Inadimplência
+  CUSTOMER_REQUEST   /// Pedido do cliente
+  PLAN_CHANGE        /// Mudança de plano (downgrade total)
+  ADMIN_ACTION       /// Ação administrativa
+}
+
+model Subscription {
+  id                    String              @id @default(cuid())
+
+  // Relacionamentos
+  clientId              String
+  client                Client              @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  planId                String
+  plan                  Plan                @relation(fields: [planId], references: [id])
+
+  // Ciclo de billing
+  billingCycle          BillingCycle        @default(MONTHLY)
+  billingAnchorDay      Int                 /// Dia do mês para cobrança (1-28)
+
+  // Período atual
+  currentPeriodStart    DateTime            @db.Timestamptz
+  currentPeriodEnd      DateTime            @db.Timestamptz
+  nextBillingDate       DateTime?           @db.Timestamptz
+
+  // Status
+  status                SubscriptionStatus  @default(ACTIVE)
+
+  // Grace period
+  gracePeriodDays       Int                 @default(7)
+
+  // Cancelamento
+  canceledAt            DateTime?           @db.Timestamptz
+  cancellationReason    CancellationReason?
+
+  // Valores
+  amount                Decimal             @db.Decimal(10, 2)  /// Valor da assinatura
+
+  // Metadados
+  metadata              Json?               /// Dados extras flexíveis
+
+  // Timestamps
+  createdAt             DateTime            @default(now()) @db.Timestamptz
+  updatedAt             DateTime            @updatedAt @db.Timestamptz
+
+  // Payments gerados por esta subscription
+  payments              Payment[]
+
+  // Finance transactions vinculadas a esta subscription
+  financeTransactions   FinanceTransaction[]  @relation("FinanceTransactions")
+
+  @@index([clientId])
+  @@index([status])
+  @@index([nextBillingDate])
+  @@index([currentPeriodEnd])
+}
+
+/// Informações do tenant no sistema destino (One Nexus ou Locadoras)
+model Tenant {
+  id              String       @id @default(cuid())
+  clientId        String       @unique
+
+  // Identificação
+  name            String       /// Nome do tenant (geralmente nome da empresa)
+  tenantUuid      String       @unique /// UUID do tenant no sistema destino
+  systemUrl       String       /// URL de acesso (ex: cliente.onenexus.com.br)
+  vpsLocation     String       /// VPS onde está hospedado (ex: "VPS-29", "VPS-145")
+
+  // Status e métricas
+  status          TenantStatus @default(ATIVO)
+  version         String       @default("1.0.0") /// Versão do sistema
+  lastAccessAt    DateTime?    @db.Timestamptz
+  activeUsers     Int          @default(0)
+  storageUsedMb   Int          @default(0)
+
+  // Módulos habilitados (JSON com configuração)
+  enabledModules  Json         @default("[]")
+
+  createdAt       DateTime     @default(now()) @db.Timestamptz
+  updatedAt       DateTime     @updatedAt @db.Timestamptz
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([tenantUuid])
+  @@index([status])
+}
+
+/// Status do tenant
+enum TenantStatus {
+  ATIVO       /// Funcionando normalmente
+  SUSPENSO    /// Temporariamente suspenso
+  BLOQUEADO   /// Bloqueado por inadimplência
+  DELETADO    /// Dados deletados (após 120 dias)
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 🎯 LEADS E FUNIL DE VENDAS
+// ══════════════════════════════════════════════════════════════════════════════
+
+/// Leads do funil de vendas
+model Lead {
+  id              String      @id @default(cuid())
+
+  // Dados do contato
+  name            String
+  email           String
+  phone           String
+  companyName     String?     /// Nome da empresa
+  cpfCnpj         String?     /// CPF ou CNPJ
+  role            ClientRole?
+  instagram       String?     /// Instagram (opcional)
+  facebook        String?     /// Facebook (opcional)
+  city            String?     @db.VarChar(100) /// Cidade - UF (formato: "São Paulo - SP")
+  numberOfUnits   Int?        /// Número de unidades da empresa (v2.35.0)
+
+  // Funil
+  stageId         String
+  originId        String
+  interestProduct ProductType @default(ONE_NEXUS)
+  interestPlanId  String?
+
+  // Atribuição
+  vendedorId      String?
+
+  // Valores e notas
+  expectedRevenue Decimal?    @db.Decimal(10, 2) /// Receita mensal esperada (MRR)
+  notes           String?     @db.Text /// Observações sobre o lead
+
+  // Métricas IA
+  score           Int         @default(50) /// Lead Score IA (0-100)
+  conversionProb  Decimal?    @db.Decimal(5, 4) /// Probabilidade de conversão
+  estimatedDays   Int?        /// Dias estimados até conversão
+  discProfile     DISCProfile? /// Perfil DISC identificado pela IA
+
+  // === LEAD SCORE IA (Detalhamento) ===
+  aiScoreFactors    Json?       /// Detalhamento dos 6 fatores do score
+  aiScoreUpdatedAt  DateTime?   /// Data da última atualização do score
+
+  // Status
+  status          LeadStatus  @default(ABERTO)
+  lossReasonId    String?
+  lossNotes       String?
+  convertedAt     DateTime?   @db.Timestamptz /// Data de conversão em cliente
+
+  // Timestamps
+  lastInteractionAt DateTime?   @db.Timestamptz
+  createdAt       DateTime    @default(now()) @db.Timestamptz
+  updatedAt       DateTime    @updatedAt @db.Timestamptz
+
+  // Relations
+  stage             FunnelStage     @relation(fields: [stageId], references: [id])
+  origin            LeadOrigin      @relation(fields: [originId], references: [id])
+  interestPlan      Plan?           @relation(fields: [interestPlanId], references: [id])
+  vendedor          User?           @relation("AssignedVendedor", fields: [vendedorId], references: [id])
+  lossReason        LossReason?     @relation(fields: [lossReasonId], references: [id])
+  interactions      Interaction[]
+  calendarEvents    CalendarEvent[] @relation("LeadCalendarEvents")
+  convertedToClient Client?         @relation("ConvertedLead")
+
+  @@index([stageId])
+  @@index([originId])
+  @@index([vendedorId])
+  @@index([status])
+  @@index([score])
+  @@index([interestProduct])
+}
+
+/// Status do lead
+enum LeadStatus {
+  ABERTO      /// Em andamento no funil
+  GANHO       /// Convertido em cliente
+  PERDIDO     /// Não converteu
+}
+
+/// Perfil DISC para análise comportamental
+enum DISCProfile {
+  DOMINANTE   /// D - Direto, decisivo, competitivo
+  INFLUENTE   /// I - Sociável, entusiasta, otimista
+  ESTAVEL     /// S - Paciente, confiável, colaborativo
+  CONSCIENTE  /// C - Analítico, preciso, sistemático
+}
+
+/// Estágios do funil de vendas (CRUD configurável)
+model FunnelStage {
+  id          String   @id @default(cuid())
+  name        String
+  order       Int      /// Ordem no funil
+  color       String   @default("#FF7300") /// Cor para exibição
+  isDefault   Boolean  @default(false)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  leads Lead[]
+
+  @@unique([name])
+  @@index([order])
+}
+
+/// Origens de leads (CRUD configurável)
+model LeadOrigin {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  leads Lead[]
+}
+
+/// Motivos de perda de leads (CRUD configurável)
+model LossReason {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  leads Lead[]
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 💰 FINANCEIRO E PAGAMENTOS
+// ══════════════════════════════════════════════════════════════════════════════
+
+/// Planos de assinatura
+model Plan {
+  id              String      @id @default(cuid())
+  
+  // Identificação
+  name            String
+  code            String      @unique /// Código interno (ex: "ONE_PRO", "LOC_ENTERPRISE")
+  product         ProductType
+  
+  // Preços
+  priceMonthly    Decimal     @db.Decimal(10, 2)
+  priceAnnual     Decimal     @db.Decimal(10, 2)
+  setupFee        Decimal     @default(0) @db.Decimal(10, 2)
+  
+  // Limites
+  maxUsers        Int         @default(5)
+  maxUnits        Int         @default(1)
+  storageGb       Int         @default(10)
+  
+  // Módulos inclusos (JSON array de Module enum)
+  includedModules Json        @default("[]")
+  
+  // Configuração
+  isActive        Boolean     @default(true)
+  isHighlighted   Boolean     @default(false) /// Destaque na página de preços
+  sortOrder       Int         @default(0)
+  
+  createdAt       DateTime    @default(now()) @db.Timestamptz
+  updatedAt       DateTime    @updatedAt @db.Timestamptz
+
+  clients         Client[]
+  leads           Lead[]
+  subscriptions   Subscription[]  /// v2.40.0
+
+  @@index([product])
+  @@index([isActive])
+}
+
+/// Pagamentos recebidos
+model Payment {
+  id              String          @id @default(cuid())
+
+  // Relacionamento com Cliente
+  clientId        String
+  client          Client          @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  // Relacionamento com Subscription (v2.40.0)
+  subscriptionId  String?
+  subscription    Subscription?   @relation(fields: [subscriptionId], references: [id])
+
+  // Valores
+  amount          Decimal         @db.Decimal(10, 2)
+  currency        String          @default("BRL")
+
+  // Classificação
+  method          PaymentMethod
+  gateway         PaymentGateway  @default(MANUAL)
+
+  // Status
+  status          PaymentStatus   @default(PENDING)
+
+  // Gateway externo
+  externalId      String?         @unique
+  gatewayId       String?         /// ID da transação no gateway
+  gatewayData     Json?           /// Dados brutos do webhook
+
+  // Datas importantes (v2.40.0 - Timestamptz)
+  dueDate         DateTime?       @db.Timestamptz
+  paidAt          DateTime?       @db.Timestamptz
+  cancelledAt     DateTime?       @db.Timestamptz
+  periodStart     DateTime?       @db.Timestamptz
+  periodEnd       DateTime?       @db.Timestamptz
+
+  // Descrição
+  description     String?         @db.VarChar(500)
+  notes           String?         @db.Text
+
+  // Fatura
+  invoiceNumber   String?
+  invoiceUrl      String?
+
+  // Ciclo de cobrança (para compatibilidade)
+  billingCycle    BillingCycle?
+
+  // Auditoria
+  createdById     String?
+  createdBy       User?           @relation(fields: [createdById], references: [id])
+  createdAt       DateTime        @default(now()) @db.Timestamptz
+  updatedAt       DateTime        @updatedAt @db.Timestamptz
+
+  @@index([clientId])
+  @@index([subscriptionId])
+  @@index([status])
+  @@index([dueDate])
+  @@index([paidAt])
+  @@index([createdAt])
+  @@index([externalId])
+  @@index([gateway])
+}
+
+/// Gateway de pagamento
+enum PaymentGateway {
+  ABACATEPAY  /// PIX - Open source
+  ASAAS       /// Cartão e boleto
+  MANUAL      /// Pagamento manual/transferência
+}
+
+/// Status do pagamento
+enum PaymentStatus {
+  PENDING     /// Aguardando pagamento
+  PROCESSING  /// Processando
+  PAID        /// Pago
+  OVERDUE     /// Pagamento atrasado
+  FAILED      /// Falhou
+  REFUNDED    /// Estornado
+  CANCELLED   /// Cancelado
+}
+
+/// Histórico de upgrades/downgrades
+model UpgradeHistory {
+  id            String   @id @default(cuid())
+  clientId      String
+  
+  previousPlan  String   /// Nome do plano anterior
+  newPlan       String   /// Nome do novo plano
+  previousMrr   Decimal  @db.Decimal(10, 2)
+  newMrr        Decimal  @db.Decimal(10, 2)
+  reason        String?
+
+  createdAt     DateTime @default(now()) @db.Timestamptz
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@index([createdAt])
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 💬 INTERAÇÕES E COMUNICAÇÃO
+// ══════════════════════════════════════════════════════════════════════════════
+
+/// Registro de interações com leads e clientes
+model Interaction {
+  id          String          @id @default(cuid())
+  
+  // Referência (lead OU cliente)
+  leadId      String?
+  clientId    String?
+  userId      String          /// Quem registrou
+  
+  // Conteúdo
+  type        InteractionType
+  title       String
+  content     String          @db.Text
+  
+  createdAt   DateTime        @default(now())
+
+  lead    Lead?   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  client  Client? @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id])
+
+  @@index([leadId])
+  @@index([clientId])
+  @@index([userId])
+  @@index([createdAt])
+}
+
+/// Tipo de interação
+enum InteractionType {
+  CALL          /// Ligação
+  EMAIL         /// E-mail
+  WHATSAPP      /// WhatsApp
+  MEETING       /// Reunião
+  DEMO          /// Demonstração
+  NOTE          /// Anotação interna
+  SUPPORT       /// Suporte
+  PROPOSAL      /// Proposta enviada
+}
+
+/// Conversas de chat (preparado para Chatwoot)
+model ChatConversation {
+  id              String    @id @default(cuid())
+  clientId        String
+  externalId      String?   @unique /// ID no Chatwoot
+  
+  status          ChatStatus @default(OPEN)
+  channel         ChatChannel @default(WHATSAPP)
+  
+  lastMessageAt   DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  client   Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  messages ChatMessage[]
+
+  @@index([clientId])
+  @@index([status])
+}
+
+/// Mensagens de chat
+model ChatMessage {
+  id              String    @id @default(cuid())
+  conversationId  String
+  senderId        String?   /// null = mensagem do cliente
+  
+  content         String    @db.Text
+  contentType     String    @default("text") /// text, image, file, etc
+  
+  isFromClient    Boolean   @default(false)
+  readAt          DateTime?
+  
+  createdAt       DateTime  @default(now())
+
+  conversation ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User?            @relation("SentMessages", fields: [senderId], references: [id])
+
+  @@index([conversationId])
+  @@index([senderId])
+  @@index([createdAt])
+}
+
+/// Status da conversa
+enum ChatStatus {
+  OPEN        /// Aberta
+  PENDING     /// Aguardando resposta
+  RESOLVED    /// Resolvida
+  CLOSED      /// Fechada
+}
+
+/// Canal de chat
+enum ChatChannel {
+  WHATSAPP
+  INSTAGRAM
+  FACEBOOK
+  EMAIL
+  WEB
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 📅 CALENDÁRIO E EVENTOS
+// ══════════════════════════════════════════════════════════════════════════════
+
+/// Eventos do calendário
+model CalendarEvent {
+  id            String        @id @default(cuid())
+  userId        String        /// Dono do evento
+
+  title         String
+  description   String?       @db.Text
+  type          EventType
+
+  // Datas (v2.40.0 - Timestamptz)
+  startAt       DateTime      @db.Timestamptz
+  endAt         DateTime      @db.Timestamptz
+  isAllDay      Boolean       @default(false)
+
+  // Participantes
+  attendeesCount Int          @default(1)
+
+  // Local
+  location      String?
+  meetingUrl    String?       /// Link para reunião online
+
+  // Referência (opcional)
+  leadId        String?
+  clientId      String?
+
+  // Lembretes
+  reminderMinutes Int[]       @default([30]) /// Minutos antes para lembrar
+
+  // Eventos recorrentes
+  isRecurring     Boolean       @default(false)
+  recurrenceRule  String?       /// RRULE format (RFC 5545)
+  recurrenceEnd   DateTime?     @db.Timestamptz /// Data final da recorrência
+  parentEventId   String?       /// Evento pai (para exceções)
+  exceptionDates  DateTime[]    @default([]) /// Datas excluídas da recorrência
+
+  // Integração Google Calendar
+  googleEventId    String?       @unique
+  googleCalendarId String?       @default("primary") /// ID do calendário no Google
+  googleSyncStatus String?       @default("SYNCED") /// SYNCED, PENDING, ERROR
+  googleLastSync   DateTime?     @db.Timestamptz /// Última sincronização
+
+  // Soft delete
+  deletedAt        DateTime?    @db.Timestamptz
+
+  createdAt     DateTime      @default(now()) @db.Timestamptz
+  updatedAt     DateTime      @updatedAt @db.Timestamptz
+
+  user         User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lead         Lead?           @relation("LeadCalendarEvents", fields: [leadId], references: [id], onDelete: SetNull)
+  client       Client?         @relation("ClientCalendarEvents", fields: [clientId], references: [id], onDelete: SetNull)
+  parentEvent  CalendarEvent?  @relation("RecurringEvents", fields: [parentEventId], references: [id], onDelete: Cascade)
+  childEvents  CalendarEvent[] @relation("RecurringEvents")
+
+  @@index([userId])
+  @@index([leadId])
+  @@index([clientId])
+  @@index([startAt])
+  @@index([type])
+  @@index([parentEventId])
+  @@index([isRecurring])
+  @@index([deletedAt])
+}
+
+/// Tipo de evento
+enum EventType {
+  DEMO          /// Demonstração
+  MEETING       /// Reunião
+  CALL          /// Ligação
+  FOLLOWUP      /// Follow-up
+  SUPPORT       /// Suporte
+  INTERNAL      /// Evento interno
+}
+
+/// Tokens OAuth2 do Google Calendar
+model GoogleCalendarToken {
+  id              String    @id @default(cuid())
+  userId          String    @unique
+
+  // Tokens criptografados (AES-256-GCM)
+  accessToken     String    @db.Text
+  refreshToken    String    @db.Text
+  expiresAt       DateTime
+
+  // Metadados
+  scope           String    /// Escopos concedidos
+  calendarId      String    @default("primary") /// ID do calendário no Google
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 🔔 NOTIFICAÇÕES
+// ══════════════════════════════════════════════════════════════════════════════
+
+/// Notificações do sistema
+model Notification {
+  id          String            @id @default(cuid())
+  userId      String
+  
+  type        NotificationType
+  title       String
+  message     String
+  link        String?           /// Link para ação
+  
+  // Dados extras (JSON flexível)
+  metadata    Json?
+  
+  isRead      Boolean           @default(false)
+  readAt      DateTime?
+  
+  createdAt   DateTime          @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isRead])
+  @@index([type])
+  @@index([createdAt])
+}
+
+/// Tipo de notificação
+enum NotificationType {
+  // IA Preditiva
+  AI_CHURN_ALERT        /// Alerta de risco de churn
+  AI_OPPORTUNITY        /// Oportunidade detectada pela IA
+  AI_LEAD_SCORE         /// Lead com score alto
+  
+  // Financeiro
+  PAYMENT_RECEIVED      /// Pagamento recebido
+  PAYMENT_OVERDUE       /// Pagamento em atraso
+  SUBSCRIPTION_EXPIRING /// Assinatura prestes a vencer
+  
+  // Leads
+  NEW_LEAD              /// Novo lead
+  LEAD_ASSIGNED         /// Lead atribuído
+  LEAD_CONVERTED        /// Lead convertido
+  
+  // Sistema
+  SYSTEM_UPDATE         /// Atualização do sistema
+  SYSTEM_ALERT          /// Alerta do sistema
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 🤖 INTELIGÊNCIA ARTIFICIAL
+// ══════════════════════════════════════════════════════════════════════════════
+
+/// Conversas com o Nexus Sales AI
+model AIConversation {
+  id          String      @id @default(cuid())
+  userId      String
+  
+  // Contexto
+  contextType AIContextType
+  contextId   String?     /// ID do lead ou cliente
+  
+  title       String?
+  
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  user     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages AIMessage[]
+
+  @@index([userId])
+  @@index([contextType])
+}
+
+/// Mensagens da conversa com IA
+model AIMessage {
+  id              String    @id @default(cuid())
+  conversationId  String
+  
+  role            AIRole
+  content         String    @db.Text
+  
+  // Metadados
+  model           String?   /// Modelo usado (gemini, openrouter, etc)
+  tokensUsed      Int?
+  
+  createdAt       DateTime  @default(now())
+
+  conversation AIConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+  @@index([createdAt])
+}
+
+/// Tipo de contexto para IA
+enum AIContextType {
+  LEAD      /// Conversa sobre um lead específico
+  CLIENT    /// Conversa sobre um cliente
+  GENERAL   /// Conversa geral
+}
+
+/// Role na conversa
+enum AIRole {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+
+/// Análises geradas pela IA (batch diário)
+model AIAnalysis {
+  id          String          @id @default(cuid())
+  
+  type        AIAnalysisType
+  targetType  String          /// "lead" ou "client"
+  targetId    String
+  
+  // Resultado da análise (JSON flexível)
+  result      Json
+  confidence  Decimal         @db.Decimal(5, 4) /// Confiança (0-1)
+  
+  // Rastreabilidade
+  model       String          /// Modelo usado
+  promptHash  String?         /// Hash do prompt para cache
+  
+  createdAt   DateTime        @default(now())
+
+  @@index([targetType, targetId])
+  @@index([type])
+  @@index([createdAt])
+}
+
+/// Tipos de análise IA
+enum AIAnalysisType {
+  // Análises de Cliente
+  CHURN_PREDICTION      /// Previsão de churn
+  HEALTH_SCORE          /// Score de saúde
+  UPSELL_OPPORTUNITY    /// Oportunidade de upsell
+  
+  // Análises de Lead
+  LEAD_SCORING          /// Lead scoring
+  CONVERSION_PREDICTION /// Previsão de conversão
+  DISC_PROFILE          /// Análise de perfil DISC
+  
+  // Análises Financeiras
+  REVENUE_FORECAST      /// Previsão de receita
+  CASH_FLOW_PREDICTION  /// Previsão de cash flow
+  ANOMALY_DETECTION     /// Detecção de anomalias
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 📝 AUDITORIA E LOGS
+// ══════════════════════════════════════════════════════════════════════════════
+
+/// Log de impersonate (auditoria obrigatória - NÃO DELETÁVEL)
+model ImpersonateLog {
+  id          String    @id @default(cuid())
+  userId      String    /// Quem fez o impersonate
+  clientId    String    /// Cliente acessado
+  tenantId    String    /// Tenant acessado
+  
+  reason      String    /// Motivo obrigatório
+  ipAddress   String
+  userAgent   String?
+  
+  startedAt   DateTime  @default(now())
+  endedAt     DateTime?
+  
+  // Ações realizadas durante o impersonate (opcional)
+  actions     Json?
+
+  user   User   @relation(fields: [userId], references: [id])
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  // onDelete: Cascade - logs deletados junto com o cliente (v2.39.2)
+  @@index([userId])
+  @@index([clientId])
+  @@index([startedAt])
+}
+
+/// Log de ações do sistema (auditoria geral)
+model AuditLog {
+  id          String    @id @default(cuid())
+  userId      String?   /// null = sistema
+  clientId    String?   /// Cliente relacionado (se aplicável)
+
+  action      String    /// CREATE, UPDATE, DELETE, etc
+  entity      String    /// Nome da entidade
+  entityId    String    /// ID da entidade
+
+  // Dados da mudança
+  oldData     Json?
+  newData     Json?
+
+  ipAddress   String?
+  userAgent   String?
+
+  createdAt   DateTime  @default(now())
+
+  user   User?   @relation(fields: [userId], references: [id])
+  client Client? @relation(fields: [clientId], references: [id])
+
+  @@index([userId])
+  @@index([clientId])
+  @@index([entity, entityId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ⚙️ CONFIGURAÇÕES DO SISTEMA
+// ══════════════════════════════════════════════════════════════════════════════
+
+/// Configurações gerais do sistema
+model SystemConfig {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       Json
+  description String?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+/// Integrações configuradas
+model Integration {
+  id          String            @id @default(cuid())
+  name        String            @unique
+  type        IntegrationType
+  
+  // Configuração (JSON flexível - NUNCA armazenar secrets aqui!)
+  config      Json              @default("{}")
+  
+  isActive    Boolean           @default(false)
+  lastSyncAt  DateTime?
+  lastError   String?
+  
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+}
+
+/// Tipos de integração
+enum IntegrationType {
+  PAYMENT_GATEWAY   /// AbacatePay, Asaas
+  EMAIL             /// SMTP Zoho
+  AI_PROVIDER       /// Groq, Gemini, OpenRouter
+  CHAT              /// Chatwoot, WAHA
+  CALENDAR          /// Google Calendar
+  ANALYTICS         /// Google Ads, Meta Ads
+}
+
+/// Webhooks recebidos (para idempotência)
+model WebhookEvent {
+  id            String    @id @default(cuid())
+  source        String    /// "abacatepay", "asaas", etc
+  externalId    String    /// ID único do evento no sistema externo
+  eventType     String    /// Tipo do evento
+  
+  payload       Json      /// Payload completo
+  processedAt   DateTime?
+  error         String?
+  
+  createdAt     DateTime  @default(now())
+
+  @@unique([source, externalId])
+  @@index([source])
+  @@index([eventType])
+  @@index([createdAt])
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 💰 MÓDULO FINANCEIRO - GESTOR NEXUS
+// ══════════════════════════════════════════════════════════════════════════════
+
+model FinanceTransaction {
+  id              String                    @id @default(cuid())
+
+  // Dados básicos (igual protótipo linha 32-37)
+  description     String                    @db.VarChar(300)
+  amount          Decimal                   @db.Decimal(12, 2)
+  type            FinanceTransactionType    // INCOME ou EXPENSE
+  category        FinanceCategory           // Assinatura, Setup, etc
+
+  // Datas
+  date            DateTime                  @db.Date
+  dueDate         DateTime?                 @db.Date
+  paidAt          DateTime?
+
+  // Status (igual protótipo: Pago, Pendente, Vencido)
+  status          FinanceStatus             @default(PENDING)
+
+  // Cliente (opcional - pode ser transação avulsa)
+  clientId        String?
+  client          Client?                   @relation(fields: [clientId], references: [id])
+
+  // Assinatura (opcional - vincula transação a ciclo de billing)
+  subscriptionId  String?
+  subscription    Subscription?             @relation("FinanceTransactions", fields: [subscriptionId], references: [id], onDelete: SetNull)
+
+  // Produto (opcional - para transações sem cliente ou override)
+  productType     ProductType?
+
+  // MRR tracking
+  isRecurring     Boolean                   @default(false)
+
+  // Auditoria
+  createdBy       String
+  creator         User                      @relation("FinanceCreator", fields: [createdBy], references: [id])
+  createdAt       DateTime                  @default(now())
+  updatedAt       DateTime                  @updatedAt
+
+  @@index([clientId])
+  @@index([date])
+  @@index([status])
+  @@index([category])
+  @@index([productType])
+  @@index([subscriptionId])
+  @@map("finance_transactions")
+}
+
+enum FinanceTransactionType {
+  INCOME
+  EXPENSE
+}
+
+enum FinanceCategory {
+  SUBSCRIPTION  // Assinatura (MRR)
+  SETUP         // Setup/Implantação
+  SUPPORT       // Suporte
+  CONSULTING    // Consultoria
+  OTHER         // Outros
+}
+
+enum FinanceStatus {
+  PAID      // Pago
+  PENDING   // Pendente
+  OVERDUE   // Vencido
+  CANCELLED // Cancelado
+}

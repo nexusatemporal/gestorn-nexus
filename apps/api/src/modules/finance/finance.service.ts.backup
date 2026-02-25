@@ -1,0 +1,636 @@
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { PrismaService } from '@/prisma/prisma.service';
+import { Prisma } from '@prisma/client';
+import {
+  CreateTransactionDto,
+  UpdateTransactionDto,
+  TransactionFiltersDto,
+  CATEGORY_LABELS,
+  STATUS_LABELS,
+  STATUS_COLORS,
+} from './dto';
+
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const pdfParse = require('pdf-parse');
+
+@Injectable()
+export class FinanceService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  // ════════════════════════════════════════════════════════════════
+  // TRANSAÇÕES CRUD
+  // ════════════════════════════════════════════════════════════════
+
+  async create(data: CreateTransactionDto, userId: string) {
+    const transaction = await this.prisma.financeTransaction.create({
+      data: {
+        description: data.description,
+        amount: data.amount,
+        type: data.type,
+        category: data.category,
+        date: new Date(data.date),
+        dueDate: data.dueDate ? new Date(data.dueDate) : null,
+        status: data.status,
+        clientId: data.clientId,
+        productType: data.productType,
+        isRecurring: data.isRecurring,
+        createdBy: userId,
+      },
+      include: this.getInclude(),
+    });
+
+    return this.format(transaction);
+  }
+
+  async findAll(filters: TransactionFiltersDto) {
+    const where: Prisma.FinanceTransactionWhereInput = {};
+
+    if (filters.startDate) {
+      where.date = { gte: new Date(filters.startDate) };
+    }
+    if (filters.endDate) {
+      where.date = { ...where.date as any, lte: new Date(filters.endDate) };
+    }
+    if (filters.type) where.type = filters.type;
+    if (filters.category) where.category = filters.category;
+    if (filters.status) where.status = filters.status;
+    if (filters.clientId) where.clientId = filters.clientId;
+    if (filters.productType) {
+      where.OR = [
+        { productType: filters.productType as any },
+        { client: { productType: filters.productType as any } },
+      ];
+    }
+
+    const transactions = await this.prisma.financeTransaction.findMany({
+      where,
+      include: this.getInclude(),
+      orderBy: { date: 'desc' },
+      take: 100,
+    });
+
+    return transactions.map(t => this.format(t));
+  }
+
+  async findById(id: string) {
+    const t = await this.prisma.financeTransaction.findUnique({
+      where: { id },
+      include: this.getInclude(),
+    });
+    if (!t) throw new NotFoundException('Transação não encontrada');
+    return this.format(t);
+  }
+
+  async update(id: string, data: UpdateTransactionDto) {
+    const exists = await this.prisma.financeTransaction.findUnique({ where: { id } });
+    if (!exists) throw new NotFoundException('Transação não encontrada');
+
+    const t = await this.prisma.financeTransaction.update({
+      where: { id },
+      data: {
+        ...(data.description && { description: data.description }),
+        ...(data.amount && { amount: data.amount }),
+        ...(data.type && { type: data.type }),
+        ...(data.category && { category: data.category }),
+        ...(data.date && { date: new Date(data.date) }),
+        ...(data.dueDate !== undefined && { dueDate: data.dueDate ? new Date(data.dueDate) : null }),
+        ...(data.status && { status: data.status }),
+        ...(data.clientId !== undefined && { clientId: data.clientId }),
+        ...(data.productType !== undefined && { productType: data.productType }),
+        ...(data.isRecurring !== undefined && { isRecurring: data.isRecurring }),
+      },
+      include: this.getInclude(),
+    });
+
+    return this.format(t);
+  }
+
+  async markAsPaid(id: string) {
+    const t = await this.prisma.financeTransaction.update({
+      where: { id },
+      data: { status: 'PAID', paidAt: new Date() },
+      include: this.getInclude(),
+    });
+    return this.format(t);
+  }
+
+  async delete(id: string) {
+    const exists = await this.prisma.financeTransaction.findUnique({ where: { id } });
+    if (!exists) throw new NotFoundException('Transação não encontrada');
+    await this.prisma.financeTransaction.delete({ where: { id } });
+  }
+
+  // ════════════════════════════════════════════════════════════════
+  // INTEGRAÇÃO COM CLIENTES
+  // ════════════════════════════════════════════════════════════════
+
+  async getClientTransactions(clientId: string) {
+    const transactions = await this.prisma.financeTransaction.findMany({
+      where: { clientId },
+      include: {
+        ...this.getInclude(),
+        client: {
+          select: {
+            id: true,
+            company: true,
+            productType: true,
+            vendedor: { select: { id: true, name: true } },
+          },
+        },
+      },
+      orderBy: { date: 'desc' },
+    });
+
+    // Calcular totais
+    const totalPaid = transactions
+      .filter(t => t.status === 'PAID')
+      .reduce((sum, t) => sum + Number(t.amount), 0);
+
+    const totalPending = transactions
+      .filter(t => t.status === 'PENDING')
+      .reduce((sum, t) => sum + Number(t.amount), 0);
+
+    const totalOverdue = transactions
+      .filter(t => t.status === 'OVERDUE')
+      .reduce((sum, t) => sum + Number(t.amount), 0);
+
+    // Próximos vencimentos (7 dias)
+    const now = new Date();
+    const sevenDaysLater = new Date(now);
+    sevenDaysLater.setDate(sevenDaysLater.getDate() + 7);
+
+    const upcoming = transactions
+      .filter(t => t.status === 'PENDING' && t.dueDate && t.dueDate >= now && t.dueDate <= sevenDaysLater)
+      .map(t => ({
+        id: t.id,
+        description: t.description,
+        amount: Number(t.amount),
+        amountFormatted: this.formatCurrency(Number(t.amount)),
+        dueDate: t.dueDate!.toISOString().split('T')[0],
+        dueDateFormatted: t.dueDate!.toLocaleDateString('pt-BR'),
+        daysRemaining: Math.ceil((t.dueDate!.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)),
+      }));
+
+    return {
+      client: transactions[0]?.client || null,
+      totals: {
+        paid: totalPaid,
+        paidFormatted: this.formatCurrency(totalPaid),
+        pending: totalPending,
+        pendingFormatted: this.formatCurrency(totalPending),
+        overdue: totalOverdue,
+        overdueFormatted: this.formatCurrency(totalOverdue),
+      },
+      upcoming,
+      transactions: transactions.map(t => this.format(t)),
+    };
+  }
+
+  async getOverdueClients() {
+    const overdueTransactions = await this.prisma.financeTransaction.findMany({
+      where: {
+        type: 'INCOME',
+        status: 'OVERDUE',
+        clientId: { not: null },
+      },
+      include: {
+        client: {
+          select: {
+            id: true,
+            company: true,
+            productType: true,
+            vendedor: { select: { id: true, name: true } },
+          },
+        },
+      },
+      orderBy: { dueDate: 'asc' },
+    });
+
+    // Agrupar por cliente
+    const clientsMap = new Map<string, any>();
+
+    overdueTransactions.forEach(t => {
+      if (!t.client) return;
+
+      const existing = clientsMap.get(t.clientId!);
+      const amount = Number(t.amount);
+      const daysOverdue = t.dueDate
+        ? Math.floor((new Date().getTime() - t.dueDate.getTime()) / (1000 * 60 * 60 * 24))
+        : 0;
+
+      if (existing) {
+        existing.overdueAmount += amount;
+        existing.transactionCount += 1;
+        existing.maxDaysOverdue = Math.max(existing.maxDaysOverdue, daysOverdue);
+      } else {
+        clientsMap.set(t.clientId!, {
+          clientId: t.clientId,
+          clientName: t.client.company,
+          productType: t.client.productType,
+          vendedor: t.client.vendedor?.name || 'N/A',
+          overdueAmount: amount,
+          overdueAmountFormatted: '',
+          transactionCount: 1,
+          maxDaysOverdue: daysOverdue,
+        });
+      }
+    });
+
+    const clients = Array.from(clientsMap.values())
+      .map(c => ({
+        ...c,
+        overdueAmountFormatted: this.formatCurrency(c.overdueAmount),
+      }))
+      .sort((a, b) => b.overdueAmount - a.overdueAmount);
+
+    return clients;
+  }
+
+  async getUpcomingDueDates() {
+    const now = new Date();
+    const sevenDaysLater = new Date(now);
+    sevenDaysLater.setDate(sevenDaysLater.getDate() + 7);
+
+    const upcoming = await this.prisma.financeTransaction.findMany({
+      where: {
+        type: 'INCOME',
+        status: 'PENDING',
+        dueDate: {
+          gte: now,
+          lte: sevenDaysLater,
+        },
+      },
+      include: {
+        client: {
+          select: {
+            id: true,
+            company: true,
+            productType: true,
+            vendedor: { select: { id: true, name: true } },
+          },
+        },
+      },
+      orderBy: { dueDate: 'asc' },
+    });
+
+    return upcoming.map(t => ({
+      id: t.id,
+      description: t.description,
+      clientId: t.clientId,
+      clientName: t.client?.company || 'Avulso',
+      productType: t.client?.productType || null,
+      vendedor: t.client?.vendedor?.name || 'N/A',
+      amount: Number(t.amount),
+      amountFormatted: this.formatCurrency(Number(t.amount)),
+      dueDate: t.dueDate!.toISOString().split('T')[0],
+      dueDateFormatted: t.dueDate!.toLocaleDateString('pt-BR'),
+      daysRemaining: Math.ceil((t.dueDate!.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)),
+      category: t.category,
+      categoryLabel: CATEGORY_LABELS[t.category as keyof typeof CATEGORY_LABELS],
+    }));
+  }
+
+  // ════════════════════════════════════════════════════════════════
+  // MÉTRICAS (igual protótipo linha 58-66)
+  // ════════════════════════════════════════════════════════════════
+
+  async getMetrics() {
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+    const lastMonth = currentMonth === 0 ? 11 : currentMonth - 1;
+    const lastMonthYear = currentMonth === 0 ? currentYear - 1 : currentYear;
+
+    // MRR atual - Soma TODAS as assinaturas recorrentes ativas (independente da data de criação)
+    const mrrResult = await this.prisma.financeTransaction.aggregate({
+      where: {
+        type: 'INCOME',
+        category: 'SUBSCRIPTION',
+        isRecurring: true,
+        status: { in: ['PAID', 'PENDING'] }, // Ativas (não canceladas)
+      },
+      _sum: { amount: true },
+    });
+    const mrr = Number(mrrResult._sum.amount || 0);
+
+    // MRR mês anterior - Contar assinaturas que estavam ativas no mês passado
+    // (criadas antes do fim do mês anterior e não canceladas até o fim do mês anterior)
+    const lastMrrResult = await this.prisma.financeTransaction.aggregate({
+      where: {
+        type: 'INCOME',
+        category: 'SUBSCRIPTION',
+        isRecurring: true,
+        date: { lt: new Date(currentYear, currentMonth, 1) }, // Criadas antes do mês atual
+        OR: [
+          { status: { in: ['PAID', 'PENDING'] } }, // Ainda ativas
+          {
+            status: 'CANCELLED',
+            updatedAt: { gte: new Date(currentYear, currentMonth, 1) } // Canceladas apenas este mês
+          }
+        ],
+      },
+      _sum: { amount: true },
+    });
+    const lastMrr = Number(lastMrrResult._sum.amount || 0);
+    const mrrTrend = lastMrr > 0 ? ((mrr - lastMrr) / lastMrr) * 100 : 0;
+
+    // ARR
+    const arr = mrr * 12;
+
+    // New MRR - Apenas assinaturas de novos clientes criados no mês atual
+    const newMrrResult = await this.prisma.financeTransaction.aggregate({
+      where: {
+        type: 'INCOME',
+        category: 'SUBSCRIPTION',
+        isRecurring: true,
+        status: { in: ['PAID', 'PENDING'] },
+        client: {
+          createdAt: {
+            gte: new Date(currentYear, currentMonth, 1),
+            lt: new Date(currentYear, currentMonth + 1, 1),
+          }
+        },
+      },
+      _sum: { amount: true },
+    });
+    const newMrr = Number(newMrrResult._sum.amount || 0);
+
+    // Churn MRR - Assinaturas canceladas no mês atual
+    const churnResult = await this.prisma.financeTransaction.aggregate({
+      where: {
+        type: 'INCOME',
+        category: 'SUBSCRIPTION',
+        isRecurring: true,
+        status: 'CANCELLED',
+        updatedAt: {
+          gte: new Date(currentYear, currentMonth, 1),
+          lt: new Date(currentYear, currentMonth + 1, 1),
+        },
+      },
+      _sum: { amount: true },
+    });
+    const churnMrr = Number(churnResult._sum.amount || 0);
+    const churnRate = lastMrr > 0 ? (churnMrr / lastMrr) * 100 : 0;
+
+    // Inadimplência
+    const overdueResult = await this.prisma.financeTransaction.aggregate({
+      where: { type: 'INCOME', status: 'OVERDUE' },
+      _sum: { amount: true },
+    });
+    const pendingResult = await this.prisma.financeTransaction.aggregate({
+      where: { type: 'INCOME', status: { in: ['PENDING', 'OVERDUE'] } },
+      _sum: { amount: true },
+    });
+    const overdueAmount = Number(overdueResult._sum.amount || 0);
+    const pendingAmount = Number(pendingResult._sum.amount || 0);
+    const inadimplencia = pendingAmount > 0 ? (overdueAmount / pendingAmount) * 100 : 0;
+
+    // Previsão (simplificada)
+    const previsao = mrr * 3 * (1 + mrrTrend / 100);
+
+    return {
+      mrr: { value: mrr, formatted: this.formatCurrency(mrr), trend: `${mrrTrend >= 0 ? '+' : ''}${mrrTrend.toFixed(0)}%`, up: mrrTrend >= 0 },
+      arr: { value: arr, formatted: this.formatCurrency(arr), trend: `${mrrTrend >= 0 ? '+' : ''}${mrrTrend.toFixed(0)}%`, up: mrrTrend >= 0 },
+      newMrr: { value: newMrr, formatted: this.formatCurrency(newMrr), trend: `+${((newMrr / (mrr || 1)) * 100).toFixed(0)}%`, up: true },
+      churnMrr: { value: churnMrr, formatted: this.formatCurrency(churnMrr), trend: `-${((churnMrr / (lastMrr || 1)) * 100).toFixed(0)}%`, up: false },
+      churnRate: { value: churnRate, formatted: `${churnRate.toFixed(1)}%`, trend: churnRate <= 2 ? '-0.1%' : '+0.2%', up: churnRate <= 2 },
+      inadimplencia: { value: inadimplencia, formatted: `${inadimplencia.toFixed(1)}%`, trend: inadimplencia <= 3 ? '-0.2%' : '+0.5%', up: inadimplencia <= 3 },
+      previsao: { value: previsao, formatted: this.formatCurrency(previsao), trend: '+18%', up: true, ai: true },
+    };
+  }
+
+  // ════════════════════════════════════════════════════════════════
+  // MRR HISTORY (igual protótipo linha 16-23)
+  // ════════════════════════════════════════════════════════════════
+
+  async getMrrHistory(months: number = 6) {
+    const result: Array<{ name: string; expansion: number; new: number; churn: number }> = [];
+    const now = new Date();
+
+    for (let i = months - 1; i >= 0; i--) {
+      const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const monthName = date.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '');
+      const nextMonth = new Date(date.getFullYear(), date.getMonth() + 1, 1);
+
+      // New MRR - Assinaturas de novos clientes criados no mês
+      const newMrr = await this.prisma.financeTransaction.aggregate({
+        where: {
+          type: 'INCOME',
+          category: 'SUBSCRIPTION',
+          isRecurring: true,
+          status: { in: ['PAID', 'PENDING'] },
+          client: { createdAt: { gte: date, lt: nextMonth } },
+        },
+        _sum: { amount: true },
+      });
+
+      // Expansion - Serviços adicionais pagos no mês (correto usar date aqui)
+      const expansion = await this.prisma.financeTransaction.aggregate({
+        where: {
+          type: 'INCOME',
+          category: { in: ['SETUP', 'CONSULTING', 'SUPPORT'] },
+          status: 'PAID',
+          date: { gte: date, lt: nextMonth },
+        },
+        _sum: { amount: true },
+      });
+
+      // Churn - Assinaturas canceladas no mês
+      const churn = await this.prisma.financeTransaction.aggregate({
+        where: {
+          type: 'INCOME',
+          category: 'SUBSCRIPTION',
+          isRecurring: true,
+          status: 'CANCELLED',
+          updatedAt: { gte: date, lt: nextMonth },
+        },
+        _sum: { amount: true },
+      });
+
+      result.push({
+        name: monthName.charAt(0).toUpperCase() + monthName.slice(1),
+        new: Number(newMrr._sum.amount || 0),
+        expansion: Number(expansion._sum.amount || 0),
+        churn: -Number(churn._sum.amount || 0),
+      });
+    }
+
+    return result;
+  }
+
+  // ════════════════════════════════════════════════════════════════
+  // AGING REPORT (igual protótipo linha 25-30)
+  // ════════════════════════════════════════════════════════════════
+
+  async getAgingReport() {
+    const now = new Date();
+    const ranges = [
+      { range: '0-30 dias', min: 0, max: 30 },
+      { range: '31-60 dias', min: 31, max: 60 },
+      { range: '61-90 dias', min: 61, max: 90 },
+      { range: '90+ dias', min: 91, max: 9999 },
+    ];
+
+    const data = [];
+    let total = 0;
+
+    for (const r of ranges) {
+      const minDate = new Date(now); minDate.setDate(minDate.getDate() - r.max);
+      const maxDate = new Date(now); maxDate.setDate(maxDate.getDate() - r.min);
+
+      const sum = await this.prisma.financeTransaction.aggregate({
+        where: {
+          type: 'INCOME', status: 'OVERDUE',
+          dueDate: { gte: minDate, lt: maxDate },
+        },
+        _sum: { amount: true },
+      });
+
+      const value = Number(sum._sum.amount || 0);
+      total += value;
+      data.push({ range: r.range, value });
+    }
+
+    return { data, total, totalFormatted: this.formatCurrency(total) };
+  }
+
+  // ════════════════════════════════════════════════════════════════
+  // HELPERS
+  // ════════════════════════════════════════════════════════════════
+
+  private getInclude() {
+    return {
+      client: {
+        select: {
+          id: true,
+          company: true,
+          productType: true,
+          vendedor: { select: { id: true, name: true } },
+        },
+      },
+      creator: { select: { id: true, name: true } },
+    };
+  }
+
+  private format(t: any) {
+    const productType = t.productType || t.client?.productType || null;
+    return {
+      id: t.id,
+      description: t.description,
+      client: t.client?.company || 'Avulso',
+      clientId: t.clientId,
+      productType,
+      productTypeLabel: productType === 'ONE_NEXUS' ? 'One Nexus' : productType === 'LOCADORAS' ? 'Locadoras' : null,
+      vendedor: t.client?.vendedor?.name || null,
+      vendedorId: t.client?.vendedor?.id || null,
+      amount: Number(t.amount),
+      amountFormatted: `R$ ${Number(t.amount).toLocaleString('pt-BR')}`,
+      date: t.date.toISOString().split('T')[0],
+      dateFormatted: t.date.toLocaleDateString('pt-BR'),
+      dueDate: t.dueDate ? t.dueDate.toISOString().split('T')[0] : null,
+      dueDateFormatted: t.dueDate ? t.dueDate.toLocaleDateString('pt-BR') : null,
+      status: t.status,
+      statusLabel: STATUS_LABELS[t.status as keyof typeof STATUS_LABELS],
+      statusColor: STATUS_COLORS[t.status as keyof typeof STATUS_COLORS],
+      type: t.type,
+      category: t.category,
+      categoryLabel: CATEGORY_LABELS[t.category as keyof typeof CATEGORY_LABELS],
+      isRecurring: t.isRecurring,
+    };
+  }
+
+  private formatCurrency(value: number): string {
+    if (value >= 1000000) return `R$ ${(value / 1000000).toFixed(2)}M`;
+    if (value >= 1000) return `R$ ${(value / 1000).toFixed(1)}k`;
+    return `R$ ${value.toLocaleString('pt-BR')}`;
+  }
+
+  // ════════════════════════════════════════════════════════════════
+  // IMPORTAÇÃO DE PDF
+  // ════════════════════════════════════════════════════════════════
+
+  async importPdf(buffer: Buffer, userId: string) {
+    try {
+      // Parse do PDF
+      const data = await pdfParse(buffer);
+      const text = data.text;
+
+      if (!text || text.trim().length === 0) {
+        throw new BadRequestException('PDF não contém texto extraível');
+      }
+
+      // Extrair transações usando regex (formato básico)
+      // Padrão: Data | Descrição | Valor
+      // Exemplo: 15/01/2024 | Assinatura One Nexus | R$ 299,00
+
+      const lines = text.split('\n').map((l: string) => l.trim()).filter((l: string) => l.length > 0);
+      const transactions: any[] = [];
+
+      // Regex para encontrar padrões de data e valor
+      const dateRegex = /(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/;
+      const valueRegex = /R\$?\s*(\d{1,3}(?:\.\d{3})*(?:,\d{2})?)/;
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const dateMatch = line.match(dateRegex);
+        const valueMatch = line.match(valueRegex);
+
+        if (dateMatch && valueMatch) {
+          // Extrair data
+          const [, day, month, year] = dateMatch;
+          const fullYear = year.length === 2 ? `20${year}` : year;
+          const date = `${fullYear}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+
+          // Extrair valor
+          const valueStr = valueMatch[1].replace(/\./g, '').replace(',', '.');
+          const amount = parseFloat(valueStr);
+
+          // Extrair descrição (texto entre data e valor)
+          let description = line
+            .replace(dateMatch[0], '')
+            .replace(valueMatch[0], '')
+            .trim()
+            .replace(/\|/g, '')
+            .trim();
+
+          if (!description) {
+            description = `Transação ${i + 1}`;
+          }
+
+          // Limitar descrição a 300 caracteres
+          if (description.length > 300) {
+            description = description.substring(0, 297) + '...';
+          }
+
+          transactions.push({
+            description,
+            amount,
+            date,
+            type: 'INCOME',
+            category: 'SUBSCRIPTION',
+            status: 'PENDING',
+            isRecurring: false,
+          });
+        }
+      }
+
+      if (transactions.length === 0) {
+        throw new BadRequestException(
+          'Não foi possível extrair transações do PDF. ' +
+          'O PDF deve conter linhas com Data | Descrição | Valor (ex: 15/01/2024 | Assinatura | R$ 299,00)'
+        );
+      }
+
+      return {
+        extracted: transactions.length,
+        transactions,
+        message: `${transactions.length} transação(ões) extraída(s). Revise os dados antes de salvar.`,
+      };
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException(`Erro ao processar PDF: ${error.message}`);
+    }
+  }
+}

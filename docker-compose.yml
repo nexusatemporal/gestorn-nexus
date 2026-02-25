@@ -1,0 +1,345 @@
+# ============================================================================
+# GESTOR NEXUS - Docker Compose para Produção (Docker Swarm / Portainer)
+# ============================================================================
+# 
+# COMO USAR NO PORTAINER:
+# 1. Stacks → Add Stack
+# 2. Nome: gestor-nexus
+# 3. Cole este arquivo OU aponte para o repositório
+# 4. Configure as variáveis de ambiente
+# 5. Deploy the stack
+#
+# IMPORTANTE: Antes de fazer deploy, criar a rede externa:
+#   docker network create --driver=overlay traefik-public
+#
+# ============================================================================
+
+version: "3.8"
+
+services:
+  # ==========================================================================
+  # API - Backend NestJS
+  # ==========================================================================
+  api:
+    image: ${REGISTRY:-}gestor-nexus-api:${TAG:-latest}
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+      args:
+        - NODE_ENV=production
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL}
+      # JWT Auth próprio (v2.54.0 - substitui Clerk)
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
+      - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-1h}
+      - JWT_REFRESH_EXPIRES_IN=${JWT_REFRESH_EXPIRES_IN:-7d}
+      - ABACATEPAY_API_KEY=${ABACATEPAY_API_KEY}
+      - ABACATEPAY_WEBHOOK_SECRET=${ABACATEPAY_WEBHOOK_SECRET}
+      - ASAAS_API_KEY=${ASAAS_API_KEY}
+      - ASAAS_WEBHOOK_TOKEN=${ASAAS_WEBHOOK_TOKEN}
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - SMTP_HOST=${SMTP_HOST:-smtp.zoho.com}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASS=${SMTP_PASS}
+      - WEB_URL=${WEB_URL:-https://gestornx.nexusatemporal.com}
+      - API_URL=${API_URL:-https://apigestor.nexusatemporal.com}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - FRONTEND_URL=${FRONTEND_URL:-https://gestornx.nexusatemporal.com}
+    networks:
+      - netnexus143
+      - internal
+    deploy:
+      mode: replicated
+      replicas: 2
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+        order: start-first
+      rollback_config:
+        parallelism: 1
+        delay: 10s
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      labels:
+        # Traefik - Roteamento
+        - "traefik.enable=true"
+        - "traefik.docker.network=netnexus143"
+        
+        # HTTPS Router
+        - "traefik.http.routers.gestor-api.rule=Host(`apigestor.nexusatemporal.com`)"
+        - "traefik.http.routers.gestor-api.entrypoints=websecure"
+        - "traefik.http.routers.gestor-api.tls=true"
+        - "traefik.http.routers.gestor-api.tls.certresolver=letsencryptresolver"
+        
+        # Service
+        - "traefik.http.services.gestor-api.loadbalancer.server.port=3001"
+        - "traefik.http.services.gestor-api.loadbalancer.healthcheck.path=/api/v1/health"
+        - "traefik.http.services.gestor-api.loadbalancer.healthcheck.interval=30s"
+        
+        # Middlewares
+        - "traefik.http.routers.gestor-api.middlewares=gestor-api-compress,gestor-api-headers,gestor-api-ratelimit"
+
+        # Compressão Brotli/Gzip (v2.51.0 - Performance)
+        - "traefik.http.middlewares.gestor-api-compress.compress=true"
+        - "traefik.http.middlewares.gestor-api-compress.compress.excludedcontenttypes=image/png,image/jpeg,image/gif,image/webp,video/mp4"
+
+        # Headers de segurança
+        - "traefik.http.middlewares.gestor-api-headers.headers.accesscontrolallowmethods=GET,POST,PUT,PATCH,DELETE,OPTIONS"
+        - "traefik.http.middlewares.gestor-api-headers.headers.accesscontrolallowheaders=Content-Type,Authorization"
+        - "traefik.http.middlewares.gestor-api-headers.headers.accesscontrolalloworiginlist=https://gestornx.nexusatemporal.com,https://www.gestornx.nexusatemporal.com"
+        - "traefik.http.middlewares.gestor-api-headers.headers.accesscontrolmaxage=100"
+        - "traefik.http.middlewares.gestor-api-headers.headers.addvaryheader=true"
+
+        # Rate limiting
+        - "traefik.http.middlewares.gestor-api-ratelimit.ratelimit.average=100"
+        - "traefik.http.middlewares.gestor-api-ratelimit.ratelimit.burst=50"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ==========================================================================
+  # WEB - Frontend React (Vite)
+  # ==========================================================================
+  web:
+    image: ${REGISTRY:-}gestor-nexus-web:${TAG:-latest}
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.web
+      args:
+        - VITE_API_URL=${API_URL:-https://apigestor.nexusatemporal.com/api/v1}
+    networks:
+      - netnexus143
+    deploy:
+      mode: replicated
+      replicas: 2
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+        order: start-first
+      rollback_config:
+        parallelism: 1
+        delay: 10s
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      labels:
+        # Traefik - Roteamento
+        - "traefik.enable=true"
+        - "traefik.docker.network=netnexus143"
+
+        # HTTP Router - Para ACME challenge (prioridade alta)
+        - "traefik.http.routers.gestornx-frontend-http.rule=Host(`gestornx.nexusatemporal.com`)"
+        - "traefik.http.routers.gestornx-frontend-http.entrypoints=web"
+        - "traefik.http.routers.gestornx-frontend-http.priority=10"
+        - "traefik.http.routers.gestornx-frontend-http.service=gestornx-frontend"
+        - "traefik.http.routers.gestornx-frontend-http.middlewares=redirect-to-https"
+
+        # Middleware de redirect
+        - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
+        - "traefik.http.middlewares.redirect-to-https.redirectscheme.permanent=true"
+
+        # HTTPS Router - Domínio principal
+        - "traefik.http.routers.gestornx-frontend.rule=Host(`gestornx.nexusatemporal.com`)"
+        - "traefik.http.routers.gestornx-frontend.entrypoints=websecure"
+        - "traefik.http.routers.gestornx-frontend.tls=true"
+        - "traefik.http.routers.gestornx-frontend.tls.certresolver=letsencryptresolver"
+        - "traefik.http.routers.gestornx-frontend.service=gestornx-frontend"
+        - "traefik.http.routers.gestornx-frontend.middlewares=gestornx-compress,gestornx-cache"
+
+        # Compressão Brotli/Gzip (v2.51.0 - Performance)
+        - "traefik.http.middlewares.gestornx-compress.compress=true"
+        - "traefik.http.middlewares.gestornx-compress.compress.excludedcontenttypes=image/png,image/jpeg,image/gif,image/webp,video/mp4"
+
+        # Cache Headers para Assets Estáticos (v2.51.0 - Performance)
+        - "traefik.http.middlewares.gestornx-cache.headers.customresponseheaders.Cache-Control=public, max-age=31536000, immutable"
+        - "traefik.http.middlewares.gestornx-cache.headers.customresponseheaders.Vary=Accept-Encoding"
+
+        # Service
+        - "traefik.http.services.gestornx-frontend.loadbalancer.server.port=80"
+        - "traefik.http.services.gestornx-frontend.loadbalancer.healthcheck.path=/"
+        - "traefik.http.services.gestornx-frontend.loadbalancer.healthcheck.interval=30s"
+        
+        # Redirect www para non-www (COMMENTED OUT TEMPORARILY)
+        # - "traefik.http.middlewares.gestornx-frontend-redirect.redirectregex.regex=^https://www\\.gestornexus\\.com\\.br/(.*)"
+        # - "traefik.http.middlewares.gestornx-frontend-redirect.redirectregex.replacement=https://gestornx.nexusatemporal.com/$${1}"
+        # - "traefik.http.middlewares.gestornx-frontend-redirect.redirectregex.permanent=true"
+        # - "traefik.http.routers.gestornx-frontend.middlewares=gestornx-frontend-redirect"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # ==========================================================================
+  # PostgreSQL - Banco de Dados
+  # ==========================================================================
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-gestor}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB:-gestor_nexus}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - internal
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-gestor} -d ${POSTGRES_DB:-gestor_nexus}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ==========================================================================
+  # Redis - Cache (opcional, para sessões/cache)
+  # ==========================================================================
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - internal
+    deploy:
+      mode: replicated
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ==========================================================================
+  # BACKUP - Backup automatizado para IDrive e2
+  # ==========================================================================
+  backup:
+    image: ${REGISTRY:-}gestor-nexus-backup:${TAG:-latest}
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backup
+    environment:
+      # PostgreSQL Connection
+      - POSTGRES_HOST=postgres
+      - POSTGRES_USER=${POSTGRES_USER:-gestor}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB:-gestor_nexus}
+
+      # IDrive e2 (S3-compatible)
+      - AWS_ACCESS_KEY_ID=${IDRIVE_ACCESS_KEY_ID:-D6ePFHwXGk9Kf1f6mlio}
+      - AWS_SECRET_ACCESS_KEY=${IDRIVE_SECRET_ACCESS_KEY:-s2o2eIzSnRYFtlCusAL5zl2JLaD8JmT05FSnVHJs}
+      - IDRIVE_ENDPOINT=${IDRIVE_ENDPOINT:-https://o0m5.va.idrivee2-26.com}
+      - IDRIVE_REGION=${IDRIVE_REGION:-us-east-1}
+      - IDRIVE_BUCKET=${IDRIVE_BUCKET:-gestornexus}
+
+      # Configurações de backup
+      - BACKUP_RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-30}
+      - RUN_BACKUP_ON_START=${RUN_BACKUP_ON_START:-false}
+      - KEEP_LOCAL_BACKUP=${KEEP_LOCAL_BACKUP:-false}
+    volumes:
+      # Código fonte (read-only)
+      - /root/Gmnexus:/app:ro
+      # Diretório de backups locais
+      - backup_data:/backups
+      # Volumes Docker para backup (read-only)
+      - postgres_data:/var/lib/postgresql/data:ro
+      - redis_data:/data:ro
+    networks:
+      - internal
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+    depends_on:
+      - postgres
+      - redis
+
+# ============================================================================
+# VOLUMES
+# ============================================================================
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  backup_data:
+    driver: local
+
+# ============================================================================
+# NETWORKS
+# ============================================================================
+networks:
+  netnexus143:
+    external: true
+  internal:
+    driver: overlay
+    attachable: true
+
+# ============================================================================
+# VARIÁVEIS DE AMBIENTE NECESSÁRIAS NO PORTAINER:
+# ============================================================================
+#
+# DATABASE_URL=postgresql://gestor:SENHA@postgres:5432/gestor_nexus
+# POSTGRES_PASSWORD=SENHA_SEGURA
+#
+# CLERK_SECRET_KEY=sk_live_xxx
+# CLERK_PUBLISHABLE_KEY=pk_live_xxx
+# CLERK_WEBHOOK_SECRET=whsec_xxx
+#
+# ABACATEPAY_API_KEY=xxx
+# ABACATEPAY_WEBHOOK_SECRET=xxx
+# ASAAS_API_KEY=xxx
+# ASAAS_WEBHOOK_TOKEN=xxx
+#
+# GROQ_API_KEY=xxx
+# GEMINI_API_KEY=xxx
+# OPENROUTER_API_KEY=xxx
+#
+# SMTP_USER=xxx
+# SMTP_PASS=xxx
+#
+# IDRIVE_ACCESS_KEY_ID=xxx
+# IDRIVE_SECRET_ACCESS_KEY=xxx
+# IDRIVE_ENDPOINT=https://o0m5.va.idrivee2-26.com
+# IDRIVE_REGION=us-east-1
+# IDRIVE_BUCKET=gestor-nexus-backups
+# BACKUP_RETENTION_DAYS=30
+#
+# ============================================================================

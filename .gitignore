@@ -1,0 +1,53 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Build outputs
+dist/
+build/
+.next/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Testing
+coverage/
+.nyc_output/
+
+# Temp files
+tmp/
+temp/
+*.tmp
+
+# Prisma
+apps/api/prisma/migrations/*_*/
+apps/api/node_modules/.prisma/
+
+# Docker volumes
+postgres_data/
+redis_data/
+
+# Test files (manter os de exemplo, ignorar gerados)
+test-calendar-*.js
+test-calendar-*.ts
+TESTE_CALENDAR_RESULTADO.md
+backup/
+PORTAINER_ENV_VARS.txt
