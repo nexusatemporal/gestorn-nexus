@@ -89,6 +89,14 @@ export const leadsApi = {
   },
 
   /**
+   * Adiciona interação à linha do tempo do lead
+   */
+  addInteraction: async (leadId: string, content: string) => {
+    const { data } = await api.post(`/leads/${leadId}/interactions`, { content });
+    return data;
+  },
+
+  /**
    * Verifica se CNPJ já existe no sistema (leads ou clientes)
    */
   checkDuplicateCnpj: async (cnpj: string) => {

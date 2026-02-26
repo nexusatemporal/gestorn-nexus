@@ -79,8 +79,10 @@ export class FunnelStagesController {
    */
   @Put(':id')
   @Roles(UserRole.SUPERADMIN)
-  @UsePipes(new ZodValidationPipe(UpdateFunnelStageSchema))
-  async update(@Param('id') id: string, @Body() dto: UpdateFunnelStageDto) {
+  async update(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(UpdateFunnelStageSchema)) dto: UpdateFunnelStageDto,
+  ) {
     return this.funnelStagesService.update(id, dto);
   }
 

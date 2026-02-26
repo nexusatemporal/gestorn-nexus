@@ -62,7 +62,6 @@ export function CityCombobox({ value, onChange, isDark, error }: CityComboboxPro
         setIsOpen(cities.length > 0);
         setHighlightedIndex(-1);
       } catch (error) {
-        console.error('Erro ao buscar cidades:', error);
         setSuggestions([]);
         setIsOpen(false);
       } finally {
@@ -150,7 +149,7 @@ export function CityCombobox({ value, onChange, isDark, error }: CityComboboxPro
             type="text"
             className={`w-full rounded-xl pl-10 pr-10 py-2.5 text-sm border focus:ring-2 focus:ring-nexus-orange/20 outline-none transition-all ${
               error
-                ? 'border-red-500 focus:ring-red-500/20'
+                ? 'border-red-500 bg-red-500/5'
                 : isDark
                 ? 'bg-zinc-800 border-zinc-700 text-white'
                 : 'bg-white border-zinc-300'
@@ -165,6 +164,7 @@ export function CityCombobox({ value, onChange, isDark, error }: CityComboboxPro
             }}
             placeholder="Ex: São Paulo - SP"
             autoComplete="off"
+            required
           />
           {/* Loading Spinner */}
           {isLoading && (
@@ -190,7 +190,10 @@ export function CityCombobox({ value, onChange, isDark, error }: CityComboboxPro
 
         {/* Error Message */}
         {error && (
-          <p className="text-xs text-red-500 mt-1 ml-1">{error}</p>
+          <p className="text-xs text-red-500 mt-1 ml-1 flex items-center gap-1">
+            <span>⚠️</span>
+            {error}
+          </p>
         )}
 
         {/* Suggestions Dropdown */}

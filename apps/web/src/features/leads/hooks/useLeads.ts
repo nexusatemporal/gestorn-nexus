@@ -51,9 +51,7 @@ export const useUpdateLead = () => {
       queryClient.invalidateQueries({ queryKey: ['leads'], exact: false });
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'], exact: false }); // ✅ v2.50.3: Auto-refresh dashboard
     },
-    onError: (error: any) => {
-      console.error('Erro ao atualizar lead:', error.response?.data?.message || error.message);
-    },
+    onError: () => {},
   });
 };
 
@@ -66,9 +64,7 @@ export const useDeleteLead = () => {
       queryClient.invalidateQueries({ queryKey: ['leads'], exact: false });
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'], exact: false }); // ✅ v2.50.3: Auto-refresh dashboard
     },
-    onError: (error: any) => {
-      console.error('Erro ao excluir lead:', error.response?.data?.message || error.message);
-    },
+    onError: () => {},
   });
 };
 
@@ -82,7 +78,7 @@ export const useConvertLead = () => {
   return useMutation({
     mutationFn: ({ leadId, payload }: { leadId: string; payload: ConvertLeadPayload }) =>
       leadsApi.convert(leadId, payload),
-    onSuccess: (data) => {
+    onSuccess: () => {
       // Invalida queries relacionadas
       queryClient.invalidateQueries({ queryKey: ['leads'], exact: false });
       queryClient.invalidateQueries({ queryKey: ['clients'], exact: false });
@@ -91,12 +87,8 @@ export const useConvertLead = () => {
       queryClient.invalidateQueries({ queryKey: ['finance'], exact: false }); // ✅ v2.43.0: Invalida finance para atualizar transações
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'], exact: false }); // ✅ v2.50.3: Auto-refresh dashboard
 
-      // Log de sucesso com módulo correto
-      console.log('Lead convertido com sucesso!', `Agora em: ${data._conversion.moduleName}`);
     },
-    onError: (error: any) => {
-      console.error('Erro ao converter lead:', error.response?.data?.message || error.message);
-    },
+    onError: () => {},
   });
 };
 
@@ -124,9 +116,7 @@ export const useConvertLeadSimple = () => {
 export const useGenerateSummary = () => {
   return useMutation({
     mutationFn: (params: { leadId: string; planId?: string }) => leadsApi.generateSummary(params),
-    onError: (error: any) => {
-      console.error('Erro ao gerar resumo:', error.response?.data?.message || 'Tente novamente');
-    },
+    onError: () => {},
   });
 };
 
@@ -139,6 +129,19 @@ export const useLeadScore = (leadId: string) => {
     queryFn: () => leadsApi.getScore(leadId),
     enabled: !!leadId,
     staleTime: 1000 * 60 * 5, // 5 minutos
+  });
+};
+
+export const useAddInteraction = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ leadId, content }: { leadId: string; content: string }) =>
+      leadsApi.addInteraction(leadId, content),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['leads'], exact: false });
+    },
+    onError: () => {},
   });
 };
 

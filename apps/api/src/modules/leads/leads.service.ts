@@ -13,7 +13,7 @@ import { ConvertLeadDto } from './dto/convert-lead.dto';
 import { LeadScoreService } from './services/lead-score.service';
 import { SubscriptionService } from '../subscriptions/subscriptions.service';
 import { parseDateBrasilia, nowBrasilia } from '../../common/utils/date.utils';
-import { UserRole, LeadStatus, ProductType, LeadOrigin, ClientStatus, BillingCycle } from '@prisma/client';
+import { UserRole, LeadStatus, ProductType, ClientStatus, BillingCycle } from '@prisma/client';
 
 /**
  * Leads Service
@@ -46,17 +46,16 @@ export class LeadsService {
     currentUserRole: UserRole;
     status?: LeadStatus;
     productType?: ProductType;
-    origin?: LeadOrigin;
+    origin?: string;
     vendedorId?: string;
   }) {
     const { currentUserId, currentUserRole, status, productType, origin, vendedorId } = params;
 
     // Construir filtros baseado na role
-    const where: any = {
-      status,
-      productType,
-      origin,
-    };
+    const where: any = {};
+    if (status) where.status = status;
+    if (productType) where.interestProduct = productType;
+    if (origin) where.origin = { name: origin };
 
     // GESTOR: Ver apenas leads da sua equipe
     if (currentUserRole === UserRole.GESTOR) {
@@ -127,6 +126,17 @@ export class LeadsService {
             color: true,
           },
         },
+        interactions: {
+          select: {
+            id: true,
+            type: true,
+            title: true,
+            content: true,
+            createdAt: true,
+            user: { select: { id: true, name: true } },
+          },
+          orderBy: { createdAt: 'desc' as const },
+        },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -173,6 +183,17 @@ export class LeadsService {
             order: true,
             color: true,
           },
+        },
+        interactions: {
+          select: {
+            id: true,
+            type: true,
+            title: true,
+            content: true,
+            createdAt: true,
+            user: { select: { id: true, name: true } },
+          },
+          orderBy: { createdAt: 'desc' as const },
         },
       },
     });
@@ -890,6 +911,39 @@ export class LeadsService {
   }
 
   /**
+   * Adicionar interação à linha do tempo de um lead
+   */
+  async addInteraction(
+    leadId: string,
+    userId: string,
+    content: string,
+  ) {
+    // Verificar se lead existe
+    const lead = await this.prisma.lead.findUnique({ where: { id: leadId } });
+    if (!lead) {
+      throw new NotFoundException(`Lead ${leadId} não encontrado`);
+    }
+
+    return this.prisma.interaction.create({
+      data: {
+        leadId,
+        userId,
+        type: 'NOTE',
+        title: 'Interação',
+        content,
+      },
+      select: {
+        id: true,
+        type: true,
+        title: true,
+        content: true,
+        createdAt: true,
+        user: { select: { id: true, name: true } },
+      },
+    });
+  }
+
+  /**
    * Converte um Lead em Cliente com dados estratégicos
    *
    * Fluxo:
@@ -1024,6 +1078,9 @@ export class LeadsService {
       });
 
       this.logger.log(`✅ Lead atualizado para GANHO`);
+
+      // 4.x Limpar interações do lead (não são mais necessárias após conversão)
+      await tx.interaction.deleteMany({ where: { leadId } });
 
       // 4.3 ✅ v2.40.0: Criar Subscription + primeiro Payment via SubscriptionService
       // Isso substitui a lógica manual de criação de payments

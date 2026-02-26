@@ -30,6 +30,7 @@ import {
   useCreateLead,
   useUpdateLead,
   useDeleteLead,
+  useAddInteraction,
   useFunnelStages,
   useCreateFunnelStage,
   useReorderFunnelStages,
@@ -236,6 +237,8 @@ const LeadFormModal: React.FC<{
   );
   const [newNote, setNewNote] = useState('');
   const [showLossReason, setShowLossReason] = useState(false);
+  const addInteractionMutation = useAddInteraction();
+  const isExistingLead = !!(lead?.id && lead.id.startsWith('cm'));
   const [selectedLossReason, setSelectedLossReason] = useState(LOSS_REASONS[0]);
 
   // Estado de erros de validação
@@ -300,11 +303,6 @@ const LeadFormModal: React.FC<{
     // Cargo
     if (!formData.role || formData.role.trim().length === 0) {
       newErrors.role = 'Cargo é obrigatório';
-    }
-
-    // Cidade
-    if (!formData.city || formData.city.trim().length < 3) {
-      newErrors.city = 'Cidade é obrigatória';
     }
 
     // Nome da clínica
@@ -416,18 +414,27 @@ const LeadFormModal: React.FC<{
   };
 
   const handleAddInteraction = () => {
-    if (newNote) {
-      const interaction: Interaction = {
-        id: Date.now().toString(),
-        date: new Date().toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }),
-        author: 'Alex Silva', // TODO: Pegar do usuário logado
-        text: newNote
-      };
-      setFormData({
-        ...formData,
-        interactions: [interaction, ...(formData.interactions || [])]
-      });
-      setNewNote('');
+    if (!newNote.trim()) return;
+
+    if (isExistingLead && lead?.id) {
+      addInteractionMutation.mutate(
+        { leadId: lead.id, content: newNote.trim() },
+        {
+          onSuccess: (data: any) => {
+            const interaction: Interaction = {
+              id: data.id,
+              date: new Date(data.createdAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }),
+              author: data.user?.name || 'Eu',
+              text: data.content,
+            };
+            setFormData({
+              ...formData,
+              interactions: [interaction, ...(formData.interactions || [])],
+            });
+            setNewNote('');
+          },
+        },
+      );
     }
   };
 
@@ -603,10 +610,8 @@ const LeadFormModal: React.FC<{
                     value={formData.city || ''}
                     onChange={(value) => {
                       setFormData({ ...formData, city: value });
-                      if (errors.city) setErrors({ ...errors, city: '' });
                     }}
                     isDark={isDark}
-                    error={errors.city}
                   />
                 </div>
               </section>
@@ -837,9 +842,21 @@ const LeadFormModal: React.FC<{
                   value={newNote}
                   onChange={e => setNewNote(e.target.value)}
                 />
-                <button type="button" onClick={handleAddInteraction} className="w-full py-2.5 bg-nexus-orange text-white rounded-xl text-xs font-bold hover:bg-nexus-orangeDark transition-all flex items-center justify-center gap-2 shadow-lg shadow-nexus-orange/10">
-                  <Send size={14}/> Registrar Interação
+                <button
+                  type="button"
+                  onClick={handleAddInteraction}
+                  disabled={!isExistingLead || addInteractionMutation.isPending}
+                  className={`w-full py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-lg ${
+                    isExistingLead
+                      ? 'bg-nexus-orange text-white hover:bg-nexus-orangeDark shadow-nexus-orange/10'
+                      : 'bg-zinc-700 text-zinc-400 cursor-not-allowed shadow-none'
+                  }`}
+                >
+                  <Send size={14}/> {addInteractionMutation.isPending ? 'Salvando...' : 'Registrar Interação'}
                 </button>
+                {!isExistingLead && (
+                  <p className="text-[10px] text-zinc-500 text-center">Salve o lead primeiro para registrar interações</p>
+                )}
               </div>
             </div>
 
@@ -1000,11 +1017,9 @@ const StageManager: React.FC<{
       {
         onSuccess: () => {
           setNewStageName('');
-          console.log('✅ Estágio adicionado com sucesso!');
           // currentStages será atualizado automaticamente via invalidateQueries
         },
-        onError: (error: any) => {
-          console.error('❌ Erro ao adicionar estágio:', error);
+        onError: () => {
           window.alert('❌ Erro ao adicionar estágio. Verifique se o nome já existe.');
         },
       }
@@ -1037,11 +1052,9 @@ const StageManager: React.FC<{
     // Deletar estágio via API
     deleteMutation.mutate(stage.id, {
       onSuccess: () => {
-        console.log('✅ Estágio removido com sucesso!');
         // currentStages será atualizado automaticamente via invalidateQueries
       },
-      onError: (error: any) => {
-        console.error('❌ Erro ao remover estágio:', error);
+      onError: () => {
         window.alert('❌ Erro ao remover estágio. Pode haver leads vinculados.');
       },
     });
@@ -1182,7 +1195,12 @@ export function LeadKanban() {
       vendedorId: apiLead.vendedor?.id, // ✅ NEW: Preserve vendedor ID
       daysInStage: 0, // Calculado posteriormente se necessário
       notes: apiLead.notes ? [apiLead.notes] : [],
-      interactions: [], // Campo não existe na API
+      interactions: (apiLead as any).interactions?.map((it: any) => ({
+        id: it.id,
+        date: new Date(it.createdAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }),
+        author: it.user?.name || 'Sistema',
+        text: it.content,
+      })) || []
     }));
   }, [apiLeads, funnelStages]);
 
@@ -1362,7 +1380,6 @@ export function LeadKanban() {
     const stage = funnelStages.find(s => s.name === targetStage);
 
     if (!stage) {
-      console.error(`❌ Stage "${targetStage}" não encontrado no backend`);
       return;
     }
 
@@ -1637,7 +1654,6 @@ export function LeadKanban() {
               .map((stageName, index) => {
                 const stage = funnelStages.find(s => s.name === stageName);
                 if (!stage) {
-                  console.error(`❌ Stage "${stageName}" não encontrado no backend`);
                   return null;
                 }
                 return { id: stage.id, order: index + 1 };
@@ -1646,7 +1662,6 @@ export function LeadKanban() {
 
             // Verificar se houve mudança de ordem
             if (reorderPayload.length === 0) {
-              console.warn('⚠️ Nenhum estágio válido para reordenar.');
               setIsStageManagerOpen(false);
               return;
             }
@@ -1657,10 +1672,8 @@ export function LeadKanban() {
               {
                 onSuccess: () => {
                   setIsStageManagerOpen(false);
-                  console.log('✅ Pipeline atualizada com sucesso!');
                 },
-                onError: (error: any) => {
-                  console.error('❌ Erro ao salvar pipeline:', error);
+                onError: () => {
                   window.alert('❌ Erro ao salvar pipeline. Tente novamente.');
                 },
               }

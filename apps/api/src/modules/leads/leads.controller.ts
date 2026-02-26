@@ -18,7 +18,7 @@ import { UpdateLeadDto, UpdateLeadSchema } from './dto/update-lead.dto';
 import { ConvertLeadDto, convertLeadSchema } from './dto/convert-lead.dto';
 import { Roles } from '@/common/decorators/roles.decorator';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
-import { UserRole, LeadStatus, ProductType, LeadOrigin } from '@prisma/client';
+import { UserRole, LeadStatus, ProductType } from '@prisma/client';
 import { ZodValidationPipe } from '@/common/pipes/zod-validation.pipe';
 import { AuthUser } from '@/common/interfaces/auth-user.interface';
 
@@ -59,7 +59,7 @@ export class LeadsController {
     @CurrentUser() user: AuthUser,
     @Query('status') status?: LeadStatus,
     @Query('productType') productType?: ProductType,
-    @Query('origin') origin?: LeadOrigin,
+    @Query('origin') origin?: string,
     @Query('vendedorId') vendedorId?: string,
   ) {
     return this.leadsService.findAll({
@@ -223,6 +223,19 @@ export class LeadsController {
   @Get(':id/score')
   async getScore(@Param('id') id: string) {
     return this.leadScoreService.updateLeadScore(id);
+  }
+
+  /**
+   * POST /leads/:id/interactions
+   * Adiciona interação à linha do tempo do lead
+   */
+  @Post(':id/interactions')
+  async addInteraction(
+    @Param('id') id: string,
+    @Body() body: { content: string },
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.leadsService.addInteraction(id, user.id, body.content);
   }
 
   /**
