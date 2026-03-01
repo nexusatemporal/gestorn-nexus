@@ -1,5 +1,6 @@
 import { Injectable, Logger, NotFoundException, BadRequestException, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { TenantsService } from '../tenants/tenants.service';
 import { Cron } from '@nestjs/schedule';
 import {
   nowBrasilia,
@@ -16,7 +17,10 @@ import { BillingCycle, ClientStatus, PaymentStatus } from '@prisma/client';
 export class SubscriptionService implements OnModuleInit {
   private readonly logger = new Logger(SubscriptionService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly tenantsService: TenantsService,
+  ) {}
 
   onModuleInit() {
     this.logger.log('═══════════════════════════════════════════════');
@@ -358,6 +362,11 @@ export class SubscriptionService implements OnModuleInit {
                 `${daysOverdue} dias em atraso (grace: ${gracePeriod} dias)`,
             );
           });
+
+          // Cancelar tenant no One Nexus (fora da tx, graceful degradation)
+          if (ft.clientId) {
+            await this.tenantsService.syncStatusToOneNexus(ft.clientId, 'canceled');
+          }
         } else if (daysOverdue > 0) {
           // ════════════════════════════════════════════
           // DENTRO DO GRACE PERIOD → INADIMPLENTE
@@ -389,6 +398,11 @@ export class SubscriptionService implements OnModuleInit {
                 `${daysOverdue}/${gracePeriod} dias`,
             );
           });
+
+          // Suspender tenant no One Nexus (fora da tx, graceful degradation)
+          if (ft.clientId) {
+            await this.tenantsService.syncStatusToOneNexus(ft.clientId, 'suspended');
+          }
         }
       } catch (error) {
         this.logger.error(`❌ [CRON overdue] Erro processando ${ft.id}: ${error.message}`);

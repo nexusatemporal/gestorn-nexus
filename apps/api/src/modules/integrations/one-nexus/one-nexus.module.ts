@@ -1,0 +1,14 @@
+import { Module } from '@nestjs/common';
+import { HttpModule } from '@nestjs/axios';
+import { ConfigModule } from '@nestjs/config';
+import { OneNexusService } from './one-nexus.service';
+
+@Module({
+  imports: [
+    HttpModule.register({ timeout: 15000 }),
+    ConfigModule,
+  ],
+  providers: [OneNexusService],
+  exports: [OneNexusService],
+})
+export class OneNexusModule {}

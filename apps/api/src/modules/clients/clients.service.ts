@@ -9,6 +9,7 @@ import {
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '@/prisma/prisma.service';
 import { SubscriptionService } from '../subscriptions/subscriptions.service'; // v2.46.0
+import { TenantsService } from '../tenants/tenants.service';
 import { CreateClientDto } from './dto/create-client.dto';
 import { UpdateClientDto } from './dto/update-client.dto';
 import { UserRole, ClientStatus, ProductType, LeadStatus } from '@prisma/client';
@@ -33,6 +34,7 @@ export class ClientsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly subscriptionService: SubscriptionService, // v2.46.0
+    private readonly tenantsService: TenantsService,
   ) {}
 
   /**
@@ -466,6 +468,11 @@ export class ClientsService {
     this.logger.log(
       `✅ Cliente criado: ${client.company} (${client.contactName}) - Vendedor: ${vendedor.name}${dto.leadId ? ' [Convertido de Lead]' : ''}`,
     );
+
+    // Provisionar no One Nexus (apenas ONE_NEXUS, fora da tx para não bloquear rollback)
+    if (client.productType === ProductType.ONE_NEXUS) {
+      await this.tenantsService.provisionOnOneNexus(client.id);
+    }
 
     return client;
   }

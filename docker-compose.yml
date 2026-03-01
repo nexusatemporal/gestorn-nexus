@@ -53,6 +53,8 @@ services:
       - GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
       - FRONTEND_URL=${FRONTEND_URL:-https://gestornx.nexusatemporal.com}
+      - ONE_NEXUS_API_URL=${ONE_NEXUS_API_URL:-https://apione.nexusatemporal.com.br/api}
+      - ONE_NEXUS_API_KEY=${ONE_NEXUS_API_KEY:-}
     networks:
       - netnexus143
       - internal

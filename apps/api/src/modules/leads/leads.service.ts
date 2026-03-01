@@ -12,6 +12,7 @@ import { UpdateLeadDto } from './dto/update-lead.dto';
 import { ConvertLeadDto } from './dto/convert-lead.dto';
 import { LeadScoreService } from './services/lead-score.service';
 import { SubscriptionService } from '../subscriptions/subscriptions.service';
+import { TenantsService } from '../tenants/tenants.service';
 import { parseDateBrasilia, nowBrasilia } from '../../common/utils/date.utils';
 import { UserRole, LeadStatus, ProductType, ClientStatus, BillingCycle } from '@prisma/client';
 
@@ -36,6 +37,7 @@ export class LeadsService {
     private readonly prisma: PrismaService,
     private readonly leadScoreService: LeadScoreService,
     private readonly subscriptionService: SubscriptionService,
+    private readonly tenantsService: TenantsService,
   ) {}
 
   /**
@@ -1167,7 +1169,12 @@ export class LeadsService {
       return { client, transaction: firstPayment, subscription };
     });
 
-    // 5. Determinar módulo de destino
+    // 5. Provisionar no One Nexus (apenas ONE_NEXUS, fora da tx para não bloquear rollback)
+    if (plan.product === ProductType.ONE_NEXUS) {
+      await this.tenantsService.provisionOnOneNexus(result.client.id);
+    }
+
+    // 6. Determinar módulo de destino
     const moduleName = plan.product === ProductType.ONE_NEXUS ? 'Clientes One Nexus' : 'Clientes NexLoc';
 
     this.logger.log(`🎉 Conversão concluída! Cliente agora em: ${moduleName}`);

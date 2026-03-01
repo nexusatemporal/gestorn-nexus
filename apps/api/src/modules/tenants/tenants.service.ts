@@ -10,6 +10,7 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { CreateTenantDto } from './dto/create-tenant.dto';
 import { UpdateTenantDto } from './dto/update-tenant.dto';
 import { UserRole, TenantStatus } from '@prisma/client';
+import { OneNexusService } from '../integrations/one-nexus/one-nexus.service';
 
 /**
  * Tenants Service
@@ -28,7 +29,115 @@ import { UserRole, TenantStatus } from '@prisma/client';
 export class TenantsService {
   private readonly logger = new Logger(TenantsService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly oneNexusService: OneNexusService,
+  ) {}
+
+  /**
+   * Provisiona o tenant do cliente no One Nexus.
+   * Cria o registro Tenant local (PENDING) e chama a API do One Nexus.
+   * Em caso de falha, salva o erro mas não interrompe o fluxo do cliente.
+   */
+  async provisionOnOneNexus(clientId: string): Promise<void> {
+    // Buscar client com dados necessários
+    const client = await this.prisma.client.findUnique({
+      where: { id: clientId },
+      include: {
+        plan: { select: { name: true, code: true } },
+        vendedor: { select: { name: true } },
+      },
+    });
+
+    if (!client) {
+      this.logger.warn(`[OneNexus] Cliente ${clientId} não encontrado para provisioning`);
+      return;
+    }
+
+    // Garantir que o Tenant local existe (pode já ter sido criado na conversão)
+    let tenant = await this.prisma.tenant.findUnique({ where: { clientId } });
+
+    if (!tenant) {
+      tenant = await this.prisma.tenant.create({
+        data: {
+          clientId,
+          name: client.company,
+          provisioningStatus: 'PENDING',
+        },
+      });
+    }
+
+    // Só provisionar se ainda está PENDING ou FAILED
+    if (tenant.provisioningStatus === 'PROVISIONED') {
+      this.logger.log(`[OneNexus] Tenant ${tenant.id} já provisionado, ignorando`);
+      return;
+    }
+
+    const slug = OneNexusService.buildSlug(client.company);
+
+    // Chamar API do One Nexus
+    const result = await this.oneNexusService.provision({
+      name: client.company,
+      slug,
+      ownerName: client.contactName,
+      ownerEmail: client.email,
+      ownerPhone: client.phone || undefined,
+      planId: client.plan?.code || undefined,
+      billingEmail: client.email,
+      taxId: client.cpfCnpj && client.cpfCnpj !== 'PENDING' ? client.cpfCnpj : undefined,
+      country: 'BR',
+    });
+
+    if (result) {
+      // Sucesso: salvar tenantUuid e marcar como PROVISIONED
+      await this.prisma.tenant.update({
+        where: { id: tenant.id },
+        data: {
+          tenantUuid: result.tenant.id,
+          provisioningStatus: 'PROVISIONED',
+          provisioningError: null,
+        },
+      });
+
+      this.logger.log(
+        `[OneNexus] ✅ Tenant provisionado: ${client.company} | ` +
+        `ID: ${result.tenant.id} | Schema: ${result.tenant.schemaName}`,
+      );
+    } else {
+      // Falha: salvar erro e manter FAILED (não quebra o fluxo do cliente)
+      await this.prisma.tenant.update({
+        where: { id: tenant.id },
+        data: {
+          provisioningStatus: 'FAILED',
+          provisioningError: 'Falha ao comunicar com a API do One Nexus. Provisione manualmente.',
+        },
+      });
+
+      this.logger.warn(
+        `[OneNexus] ⚠️ Provisioning falhou para ${client.company}. ` +
+        `Cliente criado normalmente no Gestor. Provisione manualmente.`,
+      );
+    }
+  }
+
+  /**
+   * Sincroniza o status do tenant no One Nexus baseado no status do cliente.
+   * Graceful degradation: erros são logados, não interrompem o fluxo.
+   */
+  async syncStatusToOneNexus(clientId: string, targetStatus: 'active' | 'suspended' | 'canceled'): Promise<void> {
+    try {
+      const tenant = await this.prisma.tenant.findUnique({
+        where: { clientId },
+        select: { tenantUuid: true, provisioningStatus: true },
+      });
+
+      if (!tenant?.tenantUuid || tenant.provisioningStatus !== 'PROVISIONED') return;
+
+      await this.oneNexusService.updateStatus(tenant.tenantUuid, targetStatus);
+    } catch (error) {
+      this.logger.error(`[OneNexus] Erro ao sincronizar status para clientId ${clientId}: ${error.message}`);
+    }
+  }
 
   /**
    * Listar tenants (com scoping por role)

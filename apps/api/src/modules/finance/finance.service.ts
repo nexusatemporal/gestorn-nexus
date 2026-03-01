@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
+import { TenantsService } from '../tenants/tenants.service';
 import { Prisma } from '@prisma/client';
 import {
   CreateTransactionDto,
@@ -17,7 +18,10 @@ const pdfParse = require('pdf-parse');
 export class FinanceService {
   private readonly logger = new Logger(FinanceService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly tenantsService: TenantsService,
+  ) {}
 
   // ════════════════════════════════════════════════════════════════
   // TRANSAÇÕES CRUD
@@ -174,6 +178,8 @@ export class FinanceService {
     // ✅ v2.47.0: Sincronizar cliente e subscription após marcar como PAID
     if (t.clientId) {
       await this.syncClientOnPayment(t.clientId, id);
+      // Sincronizar status no One Nexus (ativa o tenant)
+      await this.tenantsService.syncStatusToOneNexus(t.clientId, 'active');
     }
 
     const formatted = this.format(t);

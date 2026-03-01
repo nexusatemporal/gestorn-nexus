@@ -294,17 +294,21 @@ model Subscription {
 
 /// Informações do tenant no sistema destino (One Nexus ou Locadoras)
 model Tenant {
-  id              String       @id @default(cuid())
-  clientId        String       @unique
+  id              String                    @id @default(cuid())
+  clientId        String                    @unique
 
   // Identificação
-  name            String       /// Nome do tenant (geralmente nome da empresa)
-  tenantUuid      String       @unique /// UUID do tenant no sistema destino
-  systemUrl       String       /// URL de acesso (ex: cliente.onenexus.com.br)
-  vpsLocation     String       /// VPS onde está hospedado (ex: "VPS-29", "VPS-145")
+  name            String                    /// Nome do tenant (geralmente nome da empresa)
+  tenantUuid      String?                   @unique /// UUID do tenant no One Nexus (null = ainda não provisionado)
+  systemUrl       String?                   /// URL de acesso (ex: cliente.onenexus.com.br)
+  vpsLocation     String                    @default("") /// VPS onde está hospedado (ex: "VPS-29")
 
-  // Status e métricas
-  status          TenantStatus @default(ATIVO)
+  // Status e provisionamento
+  status                TenantStatus              @default(ATIVO)
+  provisioningStatus    TenantProvisioningStatus   @default(PENDING) /// Status do provisionamento no One Nexus
+  provisioningError     String?                   /// Mensagem de erro se provisionamento falhou
+
+  // Métricas
   version         String       @default("1.0.0") /// Versão do sistema
   lastAccessAt    DateTime?    @db.Timestamptz
   activeUsers     Int          @default(0)
@@ -320,6 +324,7 @@ model Tenant {
 
   @@index([tenantUuid])
   @@index([status])
+  @@index([provisioningStatus])
 }
 
 /// Status do tenant
@@ -328,6 +333,13 @@ enum TenantStatus {
   SUSPENSO    /// Temporariamente suspenso
   BLOQUEADO   /// Bloqueado por inadimplência
   DELETADO    /// Dados deletados (após 120 dias)
+}
+
+/// Status do provisionamento do tenant no One Nexus
+enum TenantProvisioningStatus {
+  PENDING      /// Aguardando provisionamento no One Nexus
+  PROVISIONED  /// Provisionado com sucesso no One Nexus
+  FAILED       /// Falha no provisionamento (ver provisioningError)
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
