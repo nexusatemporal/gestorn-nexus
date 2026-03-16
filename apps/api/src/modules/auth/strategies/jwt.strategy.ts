@@ -6,6 +6,7 @@ import { PrismaService } from '@/prisma/prisma.service';
 export interface JwtPayload {
   sub: string;
   email: string;
+  tokenVersion?: number;
 }
 
 @Injectable()
@@ -28,11 +29,17 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         role: true,
         isActive: true,
         avatar: true,
+        tokenVersion: true,
       },
     });
 
     if (!user || !user.isActive) {
       throw new UnauthorizedException('Usuario nao encontrado ou inativo');
+    }
+
+    // Verificar tokenVersion — invalida sessão após password reset
+    if ((payload.tokenVersion ?? 0) !== user.tokenVersion) {
+      throw new UnauthorizedException('Sessao expirada — faca login novamente');
     }
 
     return user;

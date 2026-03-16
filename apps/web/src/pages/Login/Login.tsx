@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Loader2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUIStore } from '@/stores/useUIStore';
@@ -6,6 +7,7 @@ import { cn } from '@/utils/cn';
 
 export function Login() {
   const { login } = useAuth();
+  const navigate = useNavigate();
   const { theme } = useUIStore();
   const isDark = theme === 'dark';
 
@@ -22,6 +24,7 @@ export function Login() {
 
     try {
       await login(email, password);
+      navigate('/', { replace: true });
     } catch (err: unknown) {
       const axiosErr = err as { response?: { data?: { message?: string } } };
       const msg = axiosErr?.response?.data?.message || 'Email ou senha incorretos';
@@ -47,18 +50,16 @@ export function Login() {
 
       <div className="w-full max-w-md space-y-8 px-4 relative z-10">
         {/* Logo e Titulo */}
-        <div className="text-center space-y-6">
+        <div className="text-center space-y-4">
           <div className="flex justify-center">
-            <div className="w-20 h-20 bg-nexus-orange rounded-2xl flex items-center justify-center font-bold text-white text-4xl shadow-2xl shadow-nexus-orange/30">
-              N
-            </div>
+            <img
+              src={isDark ? '/logos/logo-dark.png' : '/logos/logo-light.png'}
+              alt="Nexus Atemporal"
+              className="h-16 w-auto object-contain"
+            />
           </div>
           <div>
-            <h1 className={cn('text-4xl font-bold', isDark ? 'text-white' : 'text-zinc-900')}>
-              Gestor<span className="text-nexus-orange">Nexus</span>
-            </h1>
-            <p className="mt-2 text-sm text-zinc-500">Sistema de Gestao Comercial</p>
-            <p className="text-xs text-zinc-600">Nexus Atemporal</p>
+            <p className="mt-1 text-sm text-zinc-500">Sistema de Gestão Comercial</p>
           </div>
         </div>
 
@@ -160,7 +161,7 @@ export function Login() {
 
         {/* Footer */}
         <p className="text-center text-xs text-zinc-500">
-          Gestor Nexus v2.54.0 -- Nexus Atemporal
+          Gestor Nexus v2.62.0 — Nexus Atemporal
         </p>
       </div>
     </div>

@@ -21,6 +21,7 @@ export class AuthService {
         isActive: true,
         avatar: true,
         passwordHash: true,
+        tokenVersion: true,
       },
     });
 
@@ -41,8 +42,8 @@ export class AuthService {
     return result;
   }
 
-  async login(user: { id: string; email: string; name: string; role: string; isActive: boolean; avatar?: string | null }) {
-    const payload = { sub: user.id, email: user.email };
+  async login(user: { id: string; email: string; name: string; role: string; isActive: boolean; avatar?: string | null; tokenVersion: number }) {
+    const payload = { sub: user.id, email: user.email, tokenVersion: user.tokenVersion };
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const accessToken = this.jwtService.sign(payload, {
@@ -81,7 +82,7 @@ export class AuthService {
   }
 
   async refreshTokens(rawRefreshToken: string) {
-    let payload: { sub: string; email: string };
+    let payload: { sub: string; email: string; tokenVersion?: number };
 
     try {
       payload = this.jwtService.verify(rawRefreshToken, {
@@ -101,6 +102,7 @@ export class AuthService {
         isActive: true,
         avatar: true,
         refreshToken: true,
+        tokenVersion: true,
       },
     });
 
@@ -113,7 +115,12 @@ export class AuthService {
       throw new UnauthorizedException('Refresh token invalido');
     }
 
-    const newPayload = { sub: user.id, email: user.email };
+    // Verificar tokenVersion — bloqueia refresh após password reset
+    if ((payload.tokenVersion ?? 0) !== user.tokenVersion) {
+      throw new UnauthorizedException('Sessao expirada — faca login novamente');
+    }
+
+    const newPayload = { sub: user.id, email: user.email, tokenVersion: user.tokenVersion };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const newAccessToken = this.jwtService.sign(newPayload, {
       secret: process.env.JWT_SECRET || 'fallback-secret-change-in-prod',

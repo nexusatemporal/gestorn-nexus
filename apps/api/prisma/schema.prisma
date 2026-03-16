@@ -32,6 +32,7 @@ model User {
   // Auth próprio (v2.54.0)
   passwordHash    String?   /// Hash bcrypt da senha
   refreshToken    String?   /// Refresh token atual (para invalidação)
+  tokenVersion    Int       @default(0) /// Versão do token (incrementa em password reset)
 
   // Hierarquia (Gestor -> Vendedores)
   gestorId        String?
@@ -47,7 +48,8 @@ model User {
   assignedClients     Client[]         @relation("AssignedVendedor")
   interactions        Interaction[]
   impersonateLogs     ImpersonateLog[]
-  notifications       Notification[]
+  notifications             Notification[]
+  notificationPreferences   NotificationPreference[]
   chatMessages        ChatMessage[]    @relation("SentMessages")
   aiConversations     AIConversation[]
   calendarEvents      CalendarEvent[]
@@ -55,6 +57,8 @@ model User {
   auditLogs           AuditLog[]
   createdPayments     Payment[]
   financeTransactions FinanceTransaction[] @relation("FinanceCreator")
+  createdForms        Form[]               @relation("FormCreator")
+  defaultVendedorForms Form[]              @relation("FormDefaultVendedor")
 
   @@index([clerkId])
   @@index([email])
@@ -114,7 +118,7 @@ model Client {
   // Dados obrigatórios
   contactName         String        /// Nome do contato/responsável
   company             String        /// Nome da empresa/clínica
-  cpfCnpj             String        @unique /// CPF ou CNPJ (11 ou 14 dígitos)
+  cpfCnpj             String        /// CPF ou CNPJ (11 ou 14 dígitos) — unique constraint via partial index (ver migration 20260302100000)
   email               String
   phone               String
   role                ClientRole?   /// Cargo do responsável
@@ -362,6 +366,9 @@ model Lead {
   city            String?     @db.VarChar(100) /// Cidade - UF (formato: "São Paulo - SP")
   numberOfUnits   Int?        /// Número de unidades da empresa (v2.35.0)
 
+  // Chat Nexus
+  chatContactId   String?     /// ID do contato no Nexus Chat (para sync pipeline)
+
   // Funil
   stageId         String
   originId        String
@@ -405,6 +412,7 @@ model Lead {
   interactions      Interaction[]
   calendarEvents    CalendarEvent[] @relation("LeadCalendarEvents")
   convertedToClient Client?         @relation("ConvertedLead")
+  formSubmission    FormSubmission?
 
   @@index([stageId])
   @@index([originId])
@@ -412,6 +420,7 @@ model Lead {
   @@index([status])
   @@index([score])
   @@index([interestProduct])
+  @@index([chatContactId])
 }
 
 /// Status do lead
@@ -456,6 +465,7 @@ model LeadOrigin {
   updatedAt   DateTime @updatedAt
 
   leads Lead[]
+  forms Form[]
 }
 
 /// Motivos de perda de leads (CRUD configurável)
@@ -803,6 +813,11 @@ model GoogleCalendarToken {
   scope           String    /// Escopos concedidos
   calendarId      String    @default("primary") /// ID do calendário no Google
 
+  // Google Push Notifications (Watch Channel)
+  watchChannelId  String?   /// UUID do watch channel registrado no Google
+  watchResourceId String?   /// Resource ID retornado pelo Google ao criar watch
+  watchExpiration DateTime? /// Quando o watch channel expira (max 7 dias)
+
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
@@ -810,6 +825,7 @@ model GoogleCalendarToken {
 
   @@index([userId])
   @@index([expiresAt])
+  @@index([watchExpiration])
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -828,10 +844,13 @@ model Notification {
   
   // Dados extras (JSON flexível)
   metadata    Json?
-  
+
+  // Anti-spam / deduplicação (v2.59.0)
+  dedupeKey   String?           /// Chave de deduplicação (leadId, subscriptionId, clientId…)
+
   isRead      Boolean           @default(false)
   readAt      DateTime?
-  
+
   createdAt   DateTime          @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -840,6 +859,22 @@ model Notification {
   @@index([isRead])
   @@index([type])
   @@index([createdAt])
+  @@index([userId, type, dedupeKey])
+}
+
+/// Preferências de notificação por usuário (opt-in/out por tipo e canal)
+model NotificationPreference {
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType
+  inApp     Boolean          @default(true) /// Receber notificação in-app
+  email     Boolean          @default(true) /// Receber email (só para tipos críticos)
+  updatedAt DateTime         @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, type])
+  @@index([userId])
 }
 
 /// Tipo de notificação
@@ -1120,8 +1155,8 @@ model FinanceTransaction {
   isRecurring     Boolean                   @default(false)
 
   // Auditoria
-  createdBy       String
-  creator         User                      @relation("FinanceCreator", fields: [createdBy], references: [id])
+  createdBy       String?
+  creator         User?                     @relation("FinanceCreator", fields: [createdBy], references: [id], onDelete: SetNull)
   createdAt       DateTime                  @default(now())
   updatedAt       DateTime                  @updatedAt
 
@@ -1152,4 +1187,126 @@ enum FinanceStatus {
   PENDING   // Pendente
   OVERDUE   // Vencido
   CANCELLED // Cancelado
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 🏷️  STATUS CONFIGS — Labels e cores customizáveis por entidade
+// ══════════════════════════════════════════════════════════════════════════════
+
+/// Entidades cujos status são configuráveis
+enum StatusEntity {
+  CLIENT
+  LEAD
+  SUBSCRIPTION
+  TENANT
+}
+
+/// Configuração de display para status (label, cor, fundo)
+/// Permite personalizar nome e cor de status existentes e criar novos
+model StatusConfig {
+  id          String        @id @default(cuid())
+  entity      StatusEntity
+  slug        String        /// Valor do enum (ex: 'ATIVO') ou custom (ex: 'VIP')
+  label       String        /// Nome de exibição (editável)
+  color       String        /// Cor do texto (hex, ex: '#22c55e')
+  bgColor     String        /// Cor do fundo (hex, ex: '#dcfce7')
+  description String?       /// Descrição opcional
+  isSystem    Boolean       @default(false) /// true = seeded, não pode deletar
+  isActive    Boolean       @default(true)
+  sortOrder   Int           @default(0)
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  @@unique([entity, slug])
+  @@index([entity, isActive])
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 📋 FORM BUILDER — Formulários para campanhas e landing pages (v2.64.0)
+// ══════════════════════════════════════════════════════════════════════════════
+
+/// Finalidade do formulário
+enum FormPurpose {
+  CAMPAIGN  /// Link direto — WhatsApp, campanhas, QR code
+  EMBED     /// iFrame/embed — LPs, sites, portfólios
+}
+
+/// Modo de atribuição de leads captados pelo formulário
+enum VendorAssignmentMode {
+  FIXED       /// Vendedor fixo pré-definido
+  CREATOR     /// Quem criou o formulário
+  ROUND_ROBIN /// Distribuição rotativa entre lista de vendedores
+}
+
+/// Formulário de captura de leads (público, sem autenticação)
+model Form {
+  id                   String               @id @default(cuid())
+  name                 String               @db.VarChar(200)
+  slug                 String               @unique @db.VarChar(200)
+  description          String?              @db.Text
+  purpose              FormPurpose
+  productType          ProductType?
+
+  /// Array JSON de FormFieldDef — definição dos campos do form
+  fields               Json                 @default("[]")
+
+  /// Mensagem exibida após submissão bem-sucedida
+  successMessage       String?              @db.VarChar(300)
+
+  /// Modo de atribuição do lead captado
+  vendorAssignmentMode VendorAssignmentMode @default(CREATOR)
+
+  /// Vendedor fixo (usado quando vendorAssignmentMode = FIXED)
+  defaultVendedorId    String?
+  defaultVendedor      User?                @relation("FormDefaultVendedor", fields: [defaultVendedorId], references: [id], onDelete: SetNull)
+
+  /// IDs de vendedores no round-robin (usado quando vendorAssignmentMode = ROUND_ROBIN)
+  roundRobinVendedorIds Json                @default("[]")
+
+  /// Índice atual do round-robin (controla a vez do próximo vendedor)
+  roundRobinIndex      Int                  @default(0)
+
+  /// Origem de lead associada a este formulário
+  originId             String?
+  origin               LeadOrigin?          @relation(fields: [originId], references: [id], onDelete: SetNull)
+
+  isActive             Boolean              @default(true)
+
+  createdById          String
+  createdBy            User                 @relation("FormCreator", fields: [createdById], references: [id], onDelete: Cascade)
+
+  submissions          FormSubmission[]
+
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+  deletedAt            DateTime?
+
+  @@index([slug])
+  @@index([createdById])
+  @@index([defaultVendedorId])
+  @@index([originId])
+  @@index([isActive])
+  @@index([deletedAt])
+}
+
+/// Submissão de formulário — cada preenchimento público gera um Lead
+model FormSubmission {
+  id        String   @id @default(cuid())
+  formId    String
+  form      Form     @relation(fields: [formId], references: [id], onDelete: Cascade)
+
+  /// Lead criado a partir desta submissão (null se criação falhou)
+  leadId    String?  @unique
+  lead      Lead?    @relation(fields: [leadId], references: [id], onDelete: SetNull)
+
+  /// Dados brutos enviados pelo visitante (chave = field.id, valor = resposta)
+  data      Json
+
+  ipAddress String?  @db.VarChar(45)
+  createdAt DateTime @default(now())
+
+  @@index([formId])
+  @@index([leadId])
+  @@index([createdAt])
 }

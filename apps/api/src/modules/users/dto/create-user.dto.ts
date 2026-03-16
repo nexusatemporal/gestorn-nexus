@@ -33,7 +33,7 @@ export const CreateUserSchema = z.object({
 
   isActive: z.boolean().default(true),
 
-  gestorId: z.string().uuid('Gestor ID invalido').optional().nullable(),
+  gestorId: z.string().min(1, 'Gestor ID invalido').optional().nullable(),
 });
 
 export type CreateUserDto = z.infer<typeof CreateUserSchema>;
