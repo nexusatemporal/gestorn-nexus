@@ -59,6 +59,12 @@ export interface LeadContext {
   lastContact?: string;
   interactions?: number;
   notes?: string;
+  aiScoreFactors?: {
+    dataCompleteness: number;
+    planValue: number;
+    originQuality: number;
+    stageProgress: number;
+  };
 }
 
 export interface ChatMessage {

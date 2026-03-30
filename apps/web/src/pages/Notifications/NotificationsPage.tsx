@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { clsx } from 'clsx';
 import {
   Bell, Settings2, CheckCheck, Search, X, ChevronLeft, ChevronRight,
-  TrendingUp, DollarSign, Zap, Users, AlertTriangle, Info, Save,
+  TrendingUp, DollarSign, Zap, Users, AlertTriangle, Info, Save, Smartphone,
 } from 'lucide-react';
 import { useUIStore } from '@/stores/useUIStore';
 import {
@@ -70,8 +70,8 @@ function PreferencesPanel({
   const [localPrefs, setLocalPrefs] = useState<NotificationPreferences | null>(null);
   const effective = localPrefs ?? prefs ?? {};
 
-  const toggle = (type: string, channel: 'inApp' | 'email') => {
-    const current = effective[type] ?? { inApp: true, email: true };
+  const toggle = (type: string, channel: 'inApp' | 'email' | 'push') => {
+    const current = effective[type] ?? { inApp: true, email: true, push: true };
     setLocalPrefs({ ...effective, [type]: { ...current, [channel]: !current[channel] } });
   };
 
@@ -80,6 +80,7 @@ function PreferencesPanel({
       type,
       inApp: val.inApp,
       email: val.email,
+      push: val.push ?? true,
     }));
     update.mutate(payload, { onSuccess: onClose });
   };
@@ -87,7 +88,7 @@ function PreferencesPanel({
   return (
     <div
       className={clsx(
-        'absolute right-0 top-0 h-full w-80 z-20 border-l shadow-xl flex flex-col overflow-hidden',
+        'fixed inset-0 md:absolute md:right-0 md:top-0 md:h-full md:w-80 md:inset-auto z-40 md:z-20 border-l shadow-xl flex flex-col overflow-hidden',
         isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200',
       )}
     >
@@ -97,13 +98,13 @@ function PreferencesPanel({
           <Settings2 size={16} className="text-nexus-orange" />
           <span className={clsx('font-bold text-sm', isDark ? 'text-white' : 'text-zinc-900')}>Preferências</span>
         </div>
-        <button onClick={onClose} className={clsx('p-1.5 rounded-lg transition-colors', isDark ? 'hover:bg-zinc-800 text-zinc-400' : 'hover:bg-zinc-100 text-zinc-500')}>
-          <X size={14} />
+        <button onClick={onClose} className={clsx('p-2 md:p-1.5 rounded-lg transition-colors active:scale-95', isDark ? 'hover:bg-zinc-800 text-zinc-400' : 'hover:bg-zinc-100 text-zinc-500')}>
+          <X size={16} className="md:w-3.5 md:h-3.5" />
         </button>
       </div>
 
       {/* Body */}
-      <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5 custom-scrollbar">
+      <div className="flex-1 overflow-y-auto px-4 md:px-5 py-4 space-y-5 custom-scrollbar">
         {isLoading ? (
           <p className={clsx('text-xs text-center py-8', isDark ? 'text-zinc-500' : 'text-zinc-400')}>Carregando...</p>
         ) : (
@@ -113,7 +114,7 @@ function PreferencesPanel({
               <div className="space-y-2">
                 {types.map((type) => {
                   const cfg = TYPE_CONFIG[type] ?? DEFAULT_CFG;
-                  const pref = effective[type] ?? { inApp: true, email: true };
+                  const pref = effective[type] ?? { inApp: true, email: true, push: true };
                   const hasEmail = EMAIL_TYPES.has(type);
                   return (
                     <div key={type} className={clsx('flex items-center justify-between py-2 px-3 rounded-xl', isDark ? 'bg-zinc-800/50' : 'bg-zinc-50')}>
@@ -124,7 +125,7 @@ function PreferencesPanel({
                           onClick={() => toggle(type, 'inApp')}
                           title="Notificação no app"
                           className={clsx(
-                            'flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-full transition-colors',
+                            'flex items-center gap-1 text-[10px] font-medium px-2.5 md:px-2 py-1.5 md:py-1 rounded-full transition-colors active:scale-95',
                             pref.inApp
                               ? 'bg-nexus-orange text-white'
                               : isDark ? 'bg-zinc-700 text-zinc-400' : 'bg-zinc-200 text-zinc-400',
@@ -132,13 +133,26 @@ function PreferencesPanel({
                         >
                           <Bell size={9} /> App
                         </button>
+                        {/* Push toggle */}
+                        <button
+                          onClick={() => toggle(type, 'push')}
+                          title="Notificação push (navegador)"
+                          className={clsx(
+                            'flex items-center gap-1 text-[10px] font-medium px-2.5 md:px-2 py-1.5 md:py-1 rounded-full transition-colors active:scale-95',
+                            pref.push
+                              ? 'bg-green-500 text-white'
+                              : isDark ? 'bg-zinc-700 text-zinc-400' : 'bg-zinc-200 text-zinc-400',
+                          )}
+                        >
+                          <Smartphone size={9} /> Push
+                        </button>
                         {/* Email toggle (só para tipos críticos) */}
                         {hasEmail && (
                           <button
                             onClick={() => toggle(type, 'email')}
                             title="Email"
                             className={clsx(
-                              'flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-full transition-colors',
+                              'flex items-center gap-1 text-[10px] font-medium px-2.5 md:px-2 py-1.5 md:py-1 rounded-full transition-colors active:scale-95',
                               pref.email
                                 ? 'bg-blue-500 text-white'
                                 : isDark ? 'bg-zinc-700 text-zinc-400' : 'bg-zinc-200 text-zinc-400',
@@ -158,11 +172,11 @@ function PreferencesPanel({
       </div>
 
       {/* Footer */}
-      <div className={clsx('px-5 py-3 border-t', isDark ? 'border-zinc-800' : 'border-zinc-100')}>
+      <div className={clsx('px-4 md:px-5 py-3 border-t pb-[calc(12px+env(safe-area-inset-bottom))] md:pb-3', isDark ? 'border-zinc-800' : 'border-zinc-100')}>
         <button
           onClick={handleSave}
           disabled={update.isPending || !localPrefs}
-          className="w-full flex items-center justify-center gap-2 py-2 rounded-xl bg-nexus-orange text-white text-sm font-semibold disabled:opacity-50 transition-opacity"
+          className="w-full flex items-center justify-center gap-2 py-2.5 md:py-2 rounded-xl bg-nexus-orange text-white text-sm font-semibold disabled:opacity-50 transition-opacity active:scale-95"
         >
           <Save size={14} /> {update.isPending ? 'Salvando...' : 'Salvar Preferências'}
         </button>
@@ -218,14 +232,14 @@ export function NotificationsPage() {
   return (
     <div className={clsx('flex flex-col h-full', isDark ? 'bg-zinc-950' : 'bg-zinc-50')}>
       {/* ── Header ── */}
-      <div className={clsx('px-8 py-6 border-b', isDark ? 'border-zinc-800 bg-zinc-900' : 'border-zinc-200 bg-white')}>
+      <div className={clsx('px-4 py-4 md:px-8 md:py-6 border-b', isDark ? 'border-zinc-800 bg-zinc-900' : 'border-zinc-200 bg-white')}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="p-2.5 rounded-xl bg-nexus-orange/10">
               <Bell size={20} className="text-nexus-orange" />
             </div>
             <div>
-              <h1 className={clsx('text-xl font-bold', isDark ? 'text-white' : 'text-zinc-900')}>
+              <h1 className={clsx('text-lg md:text-xl font-bold', isDark ? 'text-white' : 'text-zinc-900')}>
                 Notificações
               </h1>
               <p className={clsx('text-xs mt-0.5', isDark ? 'text-zinc-500' : 'text-zinc-400')}>
@@ -233,22 +247,22 @@ export function NotificationsPage() {
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             {unreadCount > 0 && (
               <button
                 onClick={() => markAllAsRead.mutate()}
                 className={clsx(
-                  'flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-colors',
+                  'flex items-center gap-1.5 px-3 py-2.5 md:py-2 rounded-xl text-xs font-medium transition-colors active:scale-95',
                   isDark ? 'text-zinc-400 hover:bg-zinc-800' : 'text-zinc-500 hover:bg-zinc-100',
                 )}
               >
-                <CheckCheck size={14} /> Marcar todas como lidas
+                <CheckCheck size={14} /> <span className="hidden md:inline">Marcar todas como lidas</span>
               </button>
             )}
             <button
               onClick={() => setShowPrefs(!showPrefs)}
               className={clsx(
-                'flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-colors',
+                'flex items-center gap-1.5 px-3 py-2.5 md:py-2 rounded-xl text-xs font-medium transition-colors active:scale-95',
                 showPrefs
                   ? 'bg-nexus-orange text-white'
                   : isDark ? 'text-zinc-400 hover:bg-zinc-800' : 'text-zinc-500 hover:bg-zinc-100',
@@ -260,7 +274,7 @@ export function NotificationsPage() {
         </div>
 
         {/* ── Filtros ── */}
-        <div className="mt-5 flex flex-wrap items-center gap-3">
+        <div className="mt-3 md:mt-5 flex flex-col md:flex-row md:flex-wrap md:items-center gap-2 md:gap-3">
           {/* Read status */}
           <div className={clsx('flex rounded-xl p-0.5', isDark ? 'bg-zinc-800' : 'bg-zinc-100')}>
             {[
@@ -272,7 +286,7 @@ export function NotificationsPage() {
                 key={String(val)}
                 onClick={() => handleReadFilter(val)}
                 className={clsx(
-                  'px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
+                  'px-3 py-2 md:py-1.5 rounded-lg text-sm md:text-xs font-medium transition-colors',
                   readFilter === val
                     ? 'bg-nexus-orange text-white shadow-sm'
                     : isDark ? 'text-zinc-400 hover:text-zinc-200' : 'text-zinc-500 hover:text-zinc-700',
@@ -284,7 +298,7 @@ export function NotificationsPage() {
           </div>
 
           {/* Type filter */}
-          <div className="flex flex-wrap items-center gap-1.5">
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
             {[
               { label: '📋 Todas', val: undefined },
               { label: '💰 Financeiro', val: 'PAYMENT_RECEIVED,PAYMENT_OVERDUE,SUBSCRIPTION_EXPIRING' },
@@ -296,7 +310,7 @@ export function NotificationsPage() {
                 key={String(val)}
                 onClick={() => handleTypeFilter(val)}
                 className={clsx(
-                  'px-3 py-1.5 rounded-xl text-xs font-medium border transition-colors',
+                  'px-3 py-2 md:py-1.5 rounded-xl text-sm md:text-xs font-medium border transition-colors whitespace-nowrap',
                   selectedType === val
                     ? 'border-nexus-orange bg-nexus-orange/10 text-nexus-orange'
                     : isDark
@@ -310,7 +324,7 @@ export function NotificationsPage() {
           </div>
 
           {/* Search */}
-          <div className="relative ml-auto">
+          <div className="relative w-full md:w-auto md:ml-auto">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
             <input
               type="text"
@@ -318,7 +332,7 @@ export function NotificationsPage() {
               value={search}
               onChange={(e) => handleSearch(e.target.value)}
               className={clsx(
-                'pl-9 pr-3 py-2 text-xs rounded-xl border outline-none focus:ring-1 focus:ring-nexus-orange w-56',
+                'pl-9 pr-3 py-2.5 md:py-2 text-base md:text-xs rounded-xl border outline-none focus:ring-1 focus:ring-nexus-orange w-full md:w-56',
                 isDark ? 'bg-zinc-800 border-zinc-700 text-zinc-100 placeholder:text-zinc-500' : 'bg-white border-zinc-200 text-zinc-900 placeholder:text-zinc-400',
               )}
             />
@@ -352,14 +366,14 @@ export function NotificationsPage() {
                   <div
                     key={n.id}
                     className={clsx(
-                      'group flex items-start gap-4 px-8 py-4 transition-colors relative',
+                      'group flex items-start gap-4 px-4 py-3 md:px-8 md:py-4 transition-colors relative',
                       !n.isRead && (isDark ? 'bg-orange-500/5' : 'bg-orange-50/40'),
                       isDark ? 'hover:bg-zinc-900' : 'hover:bg-zinc-50',
                     )}
                   >
                     {/* Dot não lido */}
                     {!n.isRead && (
-                      <span className="absolute left-4 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-nexus-orange" />
+                      <span className="absolute left-2 md:left-4 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-nexus-orange" />
                     )}
 
                     {/* Ícone */}
@@ -384,22 +398,22 @@ export function NotificationsPage() {
                     </div>
 
                     {/* Ações */}
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                    <div className="flex items-center gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity shrink-0">
                       {!n.isRead && (
                         <button
                           onClick={() => markAsRead.mutate(n.id)}
-                          className={clsx('p-1.5 rounded-lg transition-colors', isDark ? 'hover:bg-zinc-700 text-zinc-500' : 'hover:bg-zinc-200 text-zinc-400')}
+                          className={clsx('p-2.5 md:p-1.5 rounded-lg transition-colors active:scale-95', isDark ? 'hover:bg-zinc-700 text-zinc-500' : 'hover:bg-zinc-200 text-zinc-400')}
                           title="Marcar como lida"
                         >
-                          <CheckCheck size={13} />
+                          <CheckCheck size={15} className="md:w-[13px] md:h-[13px]" />
                         </button>
                       )}
                       <button
                         onClick={() => deleteNotif.mutate(n.id)}
-                        className={clsx('p-1.5 rounded-lg transition-colors text-red-400 hover:text-red-500', isDark ? 'hover:bg-zinc-700' : 'hover:bg-red-50')}
+                        className={clsx('p-2.5 md:p-1.5 rounded-lg transition-colors text-red-400 hover:text-red-500 active:scale-95', isDark ? 'hover:bg-zinc-700' : 'hover:bg-red-50')}
                         title="Remover"
                       >
-                        <X size={13} />
+                        <X size={15} className="md:w-[13px] md:h-[13px]" />
                       </button>
                     </div>
                   </div>
@@ -410,7 +424,7 @@ export function NotificationsPage() {
 
           {/* ── Paginação ── */}
           {totalPages > 1 && (
-            <div className={clsx('flex items-center justify-between px-8 py-4 border-t', isDark ? 'border-zinc-800' : 'border-zinc-100')}>
+            <div className={clsx('flex items-center justify-between px-4 py-3 md:px-8 md:py-4 border-t', isDark ? 'border-zinc-800' : 'border-zinc-100')}>
               <p className={clsx('text-xs', isDark ? 'text-zinc-500' : 'text-zinc-400')}>
                 Mostrando {((page - 1) * 20) + 1}–{Math.min(page * 20, total)} de {total}
               </p>
@@ -418,31 +432,34 @@ export function NotificationsPage() {
                 <button
                   onClick={() => setPage(p => Math.max(p - 1, 1))}
                   disabled={page === 1}
-                  className={clsx('p-1.5 rounded-lg transition-colors disabled:opacity-30', isDark ? 'hover:bg-zinc-800 text-zinc-400' : 'hover:bg-zinc-100 text-zinc-500')}
+                  className={clsx('p-2.5 md:p-1.5 rounded-lg transition-colors disabled:opacity-30 active:scale-95', isDark ? 'hover:bg-zinc-800 text-zinc-400' : 'hover:bg-zinc-100 text-zinc-500')}
                 >
                   <ChevronLeft size={16} />
                 </button>
-                {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
-                  const p = totalPages <= 7 ? i + 1 : page <= 4 ? i + 1 : page >= totalPages - 3 ? totalPages - 6 + i : page - 3 + i;
-                  return (
-                    <button
-                      key={p}
-                      onClick={() => setPage(p)}
-                      className={clsx(
-                        'w-8 h-8 rounded-lg text-xs font-medium transition-colors',
-                        p === page
-                          ? 'bg-nexus-orange text-white'
-                          : isDark ? 'text-zinc-400 hover:bg-zinc-800' : 'text-zinc-500 hover:bg-zinc-100',
-                      )}
-                    >
-                      {p}
-                    </button>
-                  );
-                })}
+                <span className="hidden md:flex items-center gap-1">
+                  {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
+                    const p = totalPages <= 7 ? i + 1 : page <= 4 ? i + 1 : page >= totalPages - 3 ? totalPages - 6 + i : page - 3 + i;
+                    return (
+                      <button
+                        key={p}
+                        onClick={() => setPage(p)}
+                        className={clsx(
+                          'w-8 h-8 rounded-lg text-xs font-medium transition-colors',
+                          p === page
+                            ? 'bg-nexus-orange text-white'
+                            : isDark ? 'text-zinc-400 hover:bg-zinc-800' : 'text-zinc-500 hover:bg-zinc-100',
+                        )}
+                      >
+                        {p}
+                      </button>
+                    );
+                  })}
+                </span>
+                <span className="md:hidden text-xs text-zinc-400">Página {page} de {totalPages}</span>
                 <button
                   onClick={() => setPage(p => Math.min(p + 1, totalPages))}
                   disabled={page === totalPages}
-                  className={clsx('p-1.5 rounded-lg transition-colors disabled:opacity-30', isDark ? 'hover:bg-zinc-800 text-zinc-400' : 'hover:bg-zinc-100 text-zinc-500')}
+                  className={clsx('p-2.5 md:p-1.5 rounded-lg transition-colors disabled:opacity-30 active:scale-95', isDark ? 'hover:bg-zinc-800 text-zinc-400' : 'hover:bg-zinc-100 text-zinc-500')}
                 >
                   <ChevronRight size={16} />
                 </button>

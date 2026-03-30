@@ -30,10 +30,10 @@ export const ClientFinanceModal: React.FC<ClientFinanceModalProps> = ({ clientId
   const { client, totals, upcoming, transactions } = data;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-      <div className={`${isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200'} border w-full max-w-4xl rounded-2xl max-h-[90vh] overflow-hidden flex flex-col`}>
+    <div className="fixed inset-0 z-50 flex items-end md:items-center md:justify-center bg-black/60 backdrop-blur-sm">
+      <div className={`${isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200'} border w-full max-w-full md:max-w-4xl max-h-[calc(100%-1rem)] md:max-h-[90vh] md:h-auto rounded-t-2xl md:rounded-2xl overflow-hidden flex flex-col`}>
         {/* Header */}
-        <div className={`p-6 border-b ${isDark ? 'border-zinc-800' : 'border-zinc-200'} flex justify-between items-start`}>
+        <div className={`p-4 md:p-6 border-b ${isDark ? 'border-zinc-800' : 'border-zinc-200'} flex justify-between items-start`}>
           <div>
             <h2 className={`text-xl font-bold ${isDark ? 'text-white' : 'text-zinc-900'}`}>
               Histórico Financeiro
@@ -53,14 +53,14 @@ export const ClientFinanceModal: React.FC<ClientFinanceModalProps> = ({ clientId
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4 md:space-y-6">
           {/* Totals Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className={`border p-4 rounded-xl ${isDark ? 'bg-zinc-800/50 border-zinc-700' : 'bg-green-50 border-green-200'}`}>
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs font-bold text-zinc-500 uppercase">Total Pago</p>
-                  <p className={`text-2xl font-bold mt-1 ${isDark ? 'text-green-400' : 'text-green-600'}`}>
+                  <p className={`text-lg md:text-2xl font-bold mt-1 ${isDark ? 'text-green-400' : 'text-green-600'}`}>
                     {totals.paidFormatted}
                   </p>
                 </div>
@@ -72,7 +72,7 @@ export const ClientFinanceModal: React.FC<ClientFinanceModalProps> = ({ clientId
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs font-bold text-zinc-500 uppercase">Total Pendente</p>
-                  <p className={`text-2xl font-bold mt-1 ${isDark ? 'text-yellow-400' : 'text-yellow-600'}`}>
+                  <p className={`text-lg md:text-2xl font-bold mt-1 ${isDark ? 'text-yellow-400' : 'text-yellow-600'}`}>
                     {totals.pendingFormatted}
                   </p>
                 </div>
@@ -84,7 +84,7 @@ export const ClientFinanceModal: React.FC<ClientFinanceModalProps> = ({ clientId
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs font-bold text-zinc-500 uppercase">Total Vencido</p>
-                  <p className={`text-2xl font-bold mt-1 ${isDark ? 'text-red-400' : 'text-red-600'}`}>
+                  <p className={`text-lg md:text-2xl font-bold mt-1 ${isDark ? 'text-red-400' : 'text-red-600'}`}>
                     {totals.overdueFormatted}
                   </p>
                 </div>
@@ -128,51 +128,67 @@ export const ClientFinanceModal: React.FC<ClientFinanceModalProps> = ({ clientId
               Histórico de Transações ({transactions.length})
             </h3>
             <div className={`border rounded-xl overflow-hidden ${isDark ? 'border-zinc-800' : 'border-zinc-200'}`}>
-              <table className="w-full text-left text-sm">
-                <thead className={`${isDark ? 'bg-zinc-950/30 text-zinc-500' : 'bg-zinc-50 text-zinc-400'} text-xs font-bold uppercase`}>
-                  <tr>
-                    <th className="px-4 py-3">Descrição</th>
-                    <th className="px-4 py-3">Valor</th>
-                    <th className="px-4 py-3">Data</th>
-                    <th className="px-4 py-3">Status</th>
-                    <th className="px-4 py-3">Categoria</th>
-                  </tr>
-                </thead>
-                <tbody className={`divide-y ${isDark ? 'divide-zinc-800' : 'divide-zinc-100'}`}>
-                  {transactions.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="px-4 py-8 text-center text-zinc-500">
-                        Nenhuma transação
-                      </td>
-                    </tr>
-                  ) : (
-                    transactions.map((t: any) => (
-                      <tr key={t.id} className={`${isDark ? 'hover:bg-zinc-800/20' : 'hover:bg-zinc-50'}`}>
-                        <td className={`px-4 py-3 font-medium ${isDark ? 'text-white' : 'text-zinc-900'}`}>
-                          {t.description}
-                        </td>
-                        <td className={`px-4 py-3 font-mono font-bold ${isDark ? 'text-zinc-200' : 'text-zinc-800'}`}>
-                          {t.amountFormatted}
-                        </td>
-                        <td className="px-4 py-3 text-zinc-500">{t.dateFormatted}</td>
-                        <td className="px-4 py-3">
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${t.statusColor}`}>
-                            {t.statusLabel}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-xs text-zinc-400">{t.categoryLabel}</td>
+              {transactions.length === 0 ? (
+                <p className="px-4 py-8 text-center text-zinc-500">Nenhuma transação</p>
+              ) : (
+                <>
+                  {/* Mobile: card view */}
+                  <div className={`md:hidden divide-y ${isDark ? 'divide-zinc-800' : 'divide-zinc-100'}`}>
+                    {transactions.map((t: any) => (
+                      <div key={t.id} className="px-4 py-3">
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1 min-w-0">
+                            <p className={`text-sm font-medium truncate ${isDark ? 'text-white' : 'text-zinc-900'}`}>{t.description}</p>
+                            <p className="text-xs text-zinc-500 mt-0.5">{t.categoryLabel} · {t.dateFormatted}</p>
+                          </div>
+                          <div className="text-right shrink-0 ml-3">
+                            <p className={`text-sm font-bold font-mono ${isDark ? 'text-zinc-200' : 'text-zinc-800'}`}>{t.amountFormatted}</p>
+                            <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${t.statusColor}`}>{t.statusLabel}</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  {/* Desktop: table view */}
+                  <table className="hidden md:table w-full text-left text-sm">
+                    <thead className={`${isDark ? 'bg-zinc-950/30 text-zinc-500' : 'bg-zinc-50 text-zinc-400'} text-xs font-bold uppercase`}>
+                      <tr>
+                        <th className="px-4 py-3">Descrição</th>
+                        <th className="px-4 py-3">Valor</th>
+                        <th className="px-4 py-3">Data</th>
+                        <th className="px-4 py-3">Status</th>
+                        <th className="px-4 py-3">Categoria</th>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+                    </thead>
+                    <tbody className={`divide-y ${isDark ? 'divide-zinc-800' : 'divide-zinc-100'}`}>
+                      {transactions.map((t: any) => (
+                        <tr key={t.id} className={`${isDark ? 'hover:bg-zinc-800/20' : 'hover:bg-zinc-50'}`}>
+                          <td className={`px-4 py-3 font-medium ${isDark ? 'text-white' : 'text-zinc-900'}`}>
+                            {t.description}
+                          </td>
+                          <td className={`px-4 py-3 font-mono font-bold ${isDark ? 'text-zinc-200' : 'text-zinc-800'}`}>
+                            {t.amountFormatted}
+                          </td>
+                          <td className="px-4 py-3 text-zinc-500">{t.dateFormatted}</td>
+                          <td className="px-4 py-3">
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${t.statusColor}`}>
+                              {t.statusLabel}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-xs text-zinc-400">{t.categoryLabel}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </>
+              )}
             </div>
           </div>
         </div>
 
         {/* Footer */}
-        <div className={`p-6 border-t ${isDark ? 'border-zinc-800 bg-zinc-950' : 'border-zinc-200 bg-zinc-50'}`}>
-          <button onClick={onClose} className="w-full py-2 bg-nexus-orange text-white rounded-lg font-bold hover:bg-nexus-orangeDark transition-all">
+        <div className={`p-4 md:p-6 border-t ${isDark ? 'border-zinc-800 bg-zinc-950' : 'border-zinc-200 bg-zinc-50'}`}>
+          <button onClick={onClose} className="w-full py-2.5 md:py-2 bg-nexus-orange text-white rounded-lg font-bold hover:bg-nexus-orangeDark transition-all active:scale-95">
             Fechar
           </button>
         </div>

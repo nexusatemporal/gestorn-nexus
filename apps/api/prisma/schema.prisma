@@ -59,6 +59,7 @@ model User {
   financeTransactions FinanceTransaction[] @relation("FinanceCreator")
   createdForms        Form[]               @relation("FormCreator")
   defaultVendedorForms Form[]              @relation("FormDefaultVendedor")
+  pushSubscriptions   PushSubscription[]
 
   @@index([clerkId])
   @@index([email])
@@ -869,11 +870,29 @@ model NotificationPreference {
   type      NotificationType
   inApp     Boolean          @default(true) /// Receber notificação in-app
   email     Boolean          @default(true) /// Receber email (só para tipos críticos)
+  push      Boolean          @default(true) /// Receber notificação push nativa
   updatedAt DateTime         @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, type])
+  @@index([userId])
+}
+
+/// Subscription para Web Push Notifications (VAPID)
+model PushSubscription {
+  id         String   @id @default(cuid())
+  userId     String
+  endpoint   String   @unique
+  p256dh     String
+  auth       String
+  deviceType String   @default("web") /// "web" | "android" | "ios"
+  userAgent  String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([userId])
 }
 

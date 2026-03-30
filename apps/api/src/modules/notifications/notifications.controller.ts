@@ -1,8 +1,9 @@
-import { Controller, Get, Patch, Delete, Param, Post, Put, Body, Query, Sse, MessageEvent } from '@nestjs/common';
+import { Controller, Get, Patch, Delete, Param, Post, Put, Body, Query, Sse, MessageEvent, HttpCode } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Observable, EMPTY } from 'rxjs';
 import { UserRole, NotificationType } from '@prisma/client';
 import { NotificationsService } from './notifications.service';
+import { PushService } from './push.service';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { Roles } from '@/common/decorators/roles.decorator';
 import { Public } from '@/common/decorators/public.decorator';
@@ -13,6 +14,7 @@ export class NotificationsController {
   constructor(
     private readonly service: NotificationsService,
     private readonly jwtService: JwtService,
+    private readonly pushService: PushService,
   ) {}
 
   /**
@@ -92,6 +94,39 @@ export class NotificationsController {
     @CurrentUser() user: AuthUser,
   ) {
     return this.service.broadcast({ ...body, createdBy: user.id });
+  }
+
+  /** GET /notifications/vapid-key — public VAPID key for push subscription */
+  @Public()
+  @Get('vapid-key')
+  getVapidKey() {
+    const publicKey = this.pushService.getVapidPublicKey();
+    return { publicKey };
+  }
+
+  /** POST /notifications/push/subscribe — register browser push subscription */
+  @Post('push/subscribe')
+  @HttpCode(201)
+  subscribePush(
+    @CurrentUser() user: AuthUser,
+    @Body() body: { endpoint: string; p256dh: string; auth: string; deviceType?: string; userAgent?: string },
+  ) {
+    return this.pushService.subscribe(user.id, body);
+  }
+
+  /** DELETE /notifications/push/unsubscribe — remove push subscription */
+  @Delete('push/unsubscribe')
+  unsubscribePush(
+    @CurrentUser() user: AuthUser,
+    @Body() body: { endpoint: string },
+  ) {
+    return this.pushService.unsubscribe(user.id, body.endpoint);
+  }
+
+  /** POST /notifications/push/test — send test push notification */
+  @Post('push/test')
+  testPush(@CurrentUser() user: AuthUser) {
+    return this.pushService.sendTestPush(user.id);
   }
 
   /** PATCH /notifications/:id/read */

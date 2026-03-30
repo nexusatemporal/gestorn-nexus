@@ -8,7 +8,6 @@ import {
   Body,
   Param,
   Query,
-  UsePipes,
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
@@ -72,23 +71,24 @@ export class UsersController {
   }
 
   /**
+   * GET /users/email/:email
+   * Busca usuario por email
+   * Apenas SUPERADMIN e ADMINISTRATIVO
+   * IMPORTANTE: Deve vir ANTES de GET /users/:id
+   */
+  @Get('email/:email')
+  @Roles(UserRole.SUPERADMIN, UserRole.ADMINISTRATIVO)
+  async findByEmail(@Param('email') email: string) {
+    return this.usersService.findByEmail(email);
+  }
+
+  /**
    * GET /users/:id
    * Busca usuário por ID (com validação de acesso)
    */
   @Get(':id')
   async findOne(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     return this.usersService.findOne(id, user.id, user.role);
-  }
-
-  /**
-   * GET /users/email/:email
-   * Busca usuario por email
-   * Apenas SUPERADMIN e ADMINISTRATIVO
-   */
-  @Get('email/:email')
-  @Roles(UserRole.SUPERADMIN, UserRole.ADMINISTRATIVO)
-  async findByEmail(@Param('email') email: string) {
-    return this.usersService.findByEmail(email);
   }
 
   /**
@@ -100,9 +100,21 @@ export class UsersController {
    */
   @Post()
   @Roles(UserRole.SUPERADMIN, UserRole.ADMINISTRATIVO)
-  @UsePipes(new ZodValidationPipe(CreateUserSchema))
-  async create(@Body() dto: CreateUserDto) {
+  async create(@Body(new ZodValidationPipe(CreateUserSchema)) dto: CreateUserDto) {
     return this.usersService.create(dto);
+  }
+
+  /**
+   * PUT /users/me
+   * Atualiza dados do usuário logado
+   * IMPORTANTE: Deve vir ANTES de PUT /users/:id para evitar conflito de rotas
+   */
+  @Put('me')
+  async updateProfile(
+    @Body(new ZodValidationPipe(UpdateUserSchema)) dto: UpdateUserDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.usersService.update(user.id, dto, user.id, user.role);
   }
 
   /**
@@ -115,23 +127,12 @@ export class UsersController {
    * - GESTOR pode atualizar seus vendedores
    */
   @Put(':id')
-  @UsePipes(new ZodValidationPipe(UpdateUserSchema))
   async update(
     @Param('id') id: string,
-    @Body() dto: UpdateUserDto,
+    @Body(new ZodValidationPipe(UpdateUserSchema)) dto: UpdateUserDto,
     @CurrentUser() user: AuthUser,
   ) {
     return this.usersService.update(id, dto, user.id, user.role);
-  }
-
-  /**
-   * PUT /users/me
-   * Atualiza dados do usuário logado
-   */
-  @Put('me')
-  @UsePipes(new ZodValidationPipe(UpdateUserSchema))
-  async updateProfile(@Body() dto: UpdateUserDto, @CurrentUser() user: AuthUser) {
-    return this.usersService.update(user.id, dto, user.id, user.role);
   }
 
   /**
@@ -160,12 +161,13 @@ export class UsersController {
 
   /**
    * DELETE /users/:id
-   * Desativa um usuario (soft delete)
+   * Exclui um usuario permanentemente (hard delete)
    *
    * REQUER: SUPERADMIN ou ADMINISTRATIVO
    * IMPORTANTE:
-   * - Nao pode desativar a si mesmo
-   * - Nao permite desativar gestor com vendedores ativos
+   * - Nao pode excluir a si mesmo
+   * - Nao permite excluir gestor com vendedores vinculados
+   * - Nao permite excluir usuario com clientes atribuidos
    */
   @Delete(':id')
   @Roles(UserRole.SUPERADMIN, UserRole.ADMINISTRATIVO)
@@ -175,14 +177,14 @@ export class UsersController {
   }
 
   /**
-   * POST /users/:id/restore
-   * Reativa um usuário desativado
+   * POST /users/:id/resend-email
+   * Reenvia o email de boas-vindas
    *
    * REQUER: SUPERADMIN ou ADMINISTRATIVO
    */
-  @Post(':id/restore')
+  @Post(':id/resend-email')
   @Roles(UserRole.SUPERADMIN, UserRole.ADMINISTRATIVO)
-  async restore(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    return this.usersService.restore(id, user.id, user.role);
+  async resendEmail(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.usersService.resendWelcomeEmail(id, user.role);
   }
 }

@@ -6,10 +6,11 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '@/prisma/prisma.service';
 import { google, calendar_v3 } from 'googleapis';
 import { OAuth2Client } from 'google-auth-library';
-import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'crypto';
+import { createCipheriv, createDecipheriv, randomBytes, scryptSync, randomUUID } from 'crypto';
 
 /**
  * CalendarGoogleService
@@ -34,6 +35,8 @@ export class CalendarGoogleService {
   private readonly logger = new Logger(CalendarGoogleService.name);
   private readonly oauth2Client: OAuth2Client;
   private readonly encryptionKey: Buffer;
+  private readonly webhookUrl: string;
+  private readonly syncDebounce = new Map<string, number>();
 
   // Escopos necessários do Google Calendar API
   private readonly SCOPES = [
@@ -61,6 +64,12 @@ export class CalendarGoogleService {
       clientSecret,
       redirectUri,
     );
+
+    // URL do webhook para Google Push Notifications
+    this.webhookUrl = this.configService.get<string>('GOOGLE_WEBHOOK_URL') || '';
+    if (!this.webhookUrl) {
+      this.logger.warn('GOOGLE_WEBHOOK_URL não configurada - push notifications desabilitadas');
+    }
 
     // Derivar chave de criptografia de 32 bytes
     const encryptionPassword = this.configService.get<string>('ENCRYPTION_KEY');
@@ -152,6 +161,11 @@ export class CalendarGoogleService {
       });
 
       this.logger.log(`Tokens Google Calendar armazenados para usuário ${userId}`);
+
+      // Registrar watch channel para push notifications (fire-and-forget)
+      this.startWatch(userId).catch((err) => {
+        this.logger.warn(`Watch channel não registrado para ${userId}: ${err.message}`);
+      });
     } catch (error) {
       this.logger.error(
         `Erro ao processar callback OAuth2: ${error.message}`,
@@ -168,6 +182,11 @@ export class CalendarGoogleService {
    * @param userId - ID do usuário
    */
   async disconnect(userId: string): Promise<void> {
+    // Parar watch channel antes de remover tokens
+    await this.stopWatch(userId).catch((err) => {
+      this.logger.warn(`Erro ao parar watch no disconnect: ${err.message}`);
+    });
+
     await this.prisma.googleCalendarToken.delete({
       where: { userId },
     });
@@ -474,13 +493,16 @@ export class CalendarGoogleService {
         singleEvents: true, // Expandir eventos recorrentes
         orderBy: 'startTime',
         maxResults: 250,
+        showDeleted: true, // Incluir eventos deletados/cancelados
       });
 
       const googleEvents = response.data.items || [];
       const importedEvents = [];
+      let updatedCount = 0;
+      let deletedCount = 0;
 
       this.logger.log(
-        `Importando ${googleEvents.length} eventos do Google Calendar para usuário ${userId}`
+        `Sincronizando ${googleEvents.length} eventos do Google Calendar para usuário ${userId}`
       );
 
       for (const googleEvent of googleEvents) {
@@ -493,9 +515,55 @@ export class CalendarGoogleService {
             },
           });
 
+          // Tratar eventos deletados/cancelados no Google
+          if (googleEvent.status === 'cancelled') {
+            if (existing && !existing.deletedAt) {
+              await this.prisma.calendarEvent.update({
+                where: { id: existing.id },
+                data: {
+                  deletedAt: new Date(),
+                  googleSyncStatus: 'SYNCED',
+                  googleLastSync: new Date(),
+                },
+              });
+              deletedCount++;
+              this.logger.debug(
+                `Evento ${googleEvent.id} deletado no Google - soft-delete aplicado no Nexus (ID: ${existing.id})`
+              );
+            }
+            continue;
+          }
+
           if (existing) {
+            // Atualizar evento existente com dados do Google
+            const startAt = googleEvent.start?.dateTime
+              ? new Date(googleEvent.start.dateTime)
+              : new Date(googleEvent.start?.date + 'T00:00:00');
+
+            const endAt = googleEvent.end?.dateTime
+              ? new Date(googleEvent.end.dateTime)
+              : new Date(googleEvent.end?.date + 'T23:59:59');
+
+            const isAllDay = !!googleEvent.start?.date;
+
+            await this.prisma.calendarEvent.update({
+              where: { id: existing.id },
+              data: {
+                title: googleEvent.summary || existing.title,
+                description: googleEvent.description ?? existing.description,
+                startAt,
+                endAt,
+                isAllDay,
+                location: googleEvent.location ?? existing.location,
+                meetingUrl: googleEvent.hangoutLink ?? existing.meetingUrl,
+                googleSyncStatus: 'SYNCED',
+                googleLastSync: new Date(),
+                deletedAt: null, // Restaurar se foi re-criado no Google
+              },
+            });
+            updatedCount++;
             this.logger.debug(
-              `Evento ${googleEvent.id} já existe no Nexus - pulando`
+              `Evento ${googleEvent.id} atualizado no Nexus (ID: ${existing.id})`
             );
             continue;
           }
@@ -544,7 +612,7 @@ export class CalendarGoogleService {
       }
 
       this.logger.log(
-        `Importados ${importedEvents.length} novos eventos do Google Calendar`
+        `Sync Google → Nexus: ${importedEvents.length} novos, ${updatedCount} atualizados, ${deletedCount} deletados`
       );
 
       return importedEvents;
@@ -555,6 +623,179 @@ export class CalendarGoogleService {
       );
       throw new InternalServerErrorException('Erro ao sincronizar com Google Calendar');
     }
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════════
+  // GOOGLE PUSH NOTIFICATIONS (WATCH CHANNEL)
+  // ══════════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Registrar watch channel para receber push notifications do Google
+   * @param userId - ID do usuário
+   */
+  async startWatch(userId: string): Promise<void> {
+    if (!this.webhookUrl) {
+      this.logger.debug('GOOGLE_WEBHOOK_URL não configurada - watch não registrado');
+      return;
+    }
+
+    const tokenRecord = await this.prisma.googleCalendarToken.findUnique({
+      where: { userId },
+    });
+
+    if (!tokenRecord) {
+      throw new Error('Google Calendar não conectado');
+    }
+
+    const calendar = await this.getCalendarClient(userId);
+    const channelId = randomUUID();
+
+    // Expiração em 6 dias (limite Google = 7 dias, renovamos antes)
+    const expiration = Date.now() + 6 * 24 * 60 * 60 * 1000;
+
+    const response = await calendar.events.watch({
+      calendarId: tokenRecord.calendarId,
+      requestBody: {
+        id: channelId,
+        type: 'web_hook',
+        address: this.webhookUrl,
+        expiration: String(expiration),
+      },
+    });
+
+    await this.prisma.googleCalendarToken.update({
+      where: { userId },
+      data: {
+        watchChannelId: channelId,
+        watchResourceId: response.data.resourceId,
+        watchExpiration: new Date(Number(response.data.expiration)),
+      },
+    });
+
+    this.logger.log(
+      `Watch channel registrado para usuário ${userId} (channelId: ${channelId}, expira: ${new Date(expiration).toISOString()})`
+    );
+  }
+
+  /**
+   * Parar watch channel ativo
+   * @param userId - ID do usuário
+   */
+  async stopWatch(userId: string): Promise<void> {
+    const tokenRecord = await this.prisma.googleCalendarToken.findUnique({
+      where: { userId },
+    });
+
+    if (!tokenRecord?.watchChannelId || !tokenRecord?.watchResourceId) {
+      return;
+    }
+
+    try {
+      const calendar = await this.getCalendarClient(userId);
+
+      await calendar.channels.stop({
+        requestBody: {
+          id: tokenRecord.watchChannelId,
+          resourceId: tokenRecord.watchResourceId,
+        },
+      });
+
+      this.logger.debug(`Watch channel parado para usuário ${userId}`);
+    } catch (error) {
+      // Channel pode já ter expirado — ignorar
+      this.logger.debug(`Watch channel já expirado/inválido para ${userId}: ${error.message}`);
+    }
+
+    await this.prisma.googleCalendarToken.update({
+      where: { userId },
+      data: {
+        watchChannelId: null,
+        watchResourceId: null,
+        watchExpiration: null,
+      },
+    });
+  }
+
+  /**
+   * Processar notificação webhook do Google Calendar
+   * @param channelId - ID do watch channel (header X-Goog-Channel-ID)
+   * @param resourceId - ID do recurso (header X-Goog-Resource-ID)
+   */
+  async handleWebhookNotification(channelId: string, resourceId: string): Promise<void> {
+    const tokenRecord = await this.prisma.googleCalendarToken.findFirst({
+      where: { watchChannelId: channelId },
+    });
+
+    if (!tokenRecord) {
+      this.logger.warn(`Webhook recebido com channelId desconhecido: ${channelId}`);
+      return;
+    }
+
+    if (tokenRecord.watchResourceId !== resourceId) {
+      this.logger.warn(`Webhook com resourceId inválido para channelId ${channelId}`);
+      return;
+    }
+
+    // Debounce: ignorar se último sync < 5 segundos
+    const lastSync = this.syncDebounce.get(tokenRecord.userId);
+    const now = Date.now();
+    if (lastSync && now - lastSync < 5000) {
+      this.logger.debug(`Webhook debounced para usuário ${tokenRecord.userId}`);
+      return;
+    }
+    this.syncDebounce.set(tokenRecord.userId, now);
+
+    try {
+      await this.syncFromGoogle(tokenRecord.userId);
+      this.logger.log(`Sync automático via webhook para usuário ${tokenRecord.userId}`);
+    } catch (error) {
+      this.logger.error(
+        `Erro no sync via webhook para ${tokenRecord.userId}: ${error.message}`,
+        error.stack,
+      );
+    }
+  }
+
+  /**
+   * Cron: Renovar watch channels prestes a expirar
+   * Roda diariamente às 11:00 UTC (08:00 BRT)
+   */
+  @Cron('0 11 * * *', { name: 'google-watch-renewal' })
+  async handleWatchRenewal(): Promise<void> {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const expiringTokens = await this.prisma.googleCalendarToken.findMany({
+      where: {
+        watchExpiration: {
+          not: null,
+          lt: tomorrow,
+        },
+      },
+    });
+
+    if (expiringTokens.length === 0) {
+      return;
+    }
+
+    this.logger.log(`Renovando ${expiringTokens.length} watch channels prestes a expirar`);
+    let renewed = 0;
+    let failed = 0;
+
+    for (const token of expiringTokens) {
+      try {
+        await this.stopWatch(token.userId);
+        await this.startWatch(token.userId);
+        renewed++;
+      } catch (error) {
+        failed++;
+        this.logger.error(
+          `Falha ao renovar watch para ${token.userId}: ${error.message}`,
+        );
+      }
+    }
+
+    this.logger.log(`Watch renewal: ${renewed} renovados, ${failed} falharam`);
   }
 
   // ══════════════════════════════════════════════════════════════════════════════

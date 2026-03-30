@@ -39,7 +39,7 @@ export function LeadSelector({
       <button
         onClick={() => setIsOpen(!isOpen)}
         className={clsx(
-          'flex items-center gap-3 px-4 py-2 rounded-xl border transition-all min-w-[200px]',
+          'flex items-center gap-2 md:gap-3 px-3 md:px-4 py-2 rounded-xl border transition-all min-w-0 md:min-w-[200px] w-full md:w-auto',
           isDark
             ? 'bg-zinc-800 border-zinc-700 hover:border-zinc-600'
             : 'bg-white border-zinc-200 hover:border-zinc-300 shadow-sm'
@@ -86,7 +86,7 @@ export function LeadSelector({
 
           {/* Dropdown Content */}
           <div className={clsx(
-            'absolute top-full right-0 mt-2 w-80 rounded-2xl border shadow-2xl z-50 overflow-hidden',
+            'absolute top-full right-0 mt-2 w-[calc(100vw-2rem)] md:w-80 max-w-80 rounded-2xl border shadow-2xl z-50 overflow-hidden',
             isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200'
           )}>
             {/* Search */}

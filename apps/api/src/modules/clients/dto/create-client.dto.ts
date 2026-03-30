@@ -12,6 +12,34 @@ import { ProductType, ClientStatus, BillingCycle, ClientRole } from '@prisma/cli
  * - GESTOR pode atribuir aos seus vendedores
  * - VENDEDOR cria para si mesmo
  */
+function validateCnpj(cnpj: string): boolean {
+  if (/^(\d)\1+$/.test(cnpj)) return false; // todos iguais (ex: 00000000000000)
+  const weights1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+  const weights2 = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+  const calc = (digits: string, weights: number[]) => {
+    const sum = weights.reduce((acc, w, i) => acc + parseInt(digits[i]) * w, 0);
+    const r = sum % 11;
+    return r < 2 ? 0 : 11 - r;
+  };
+  return (
+    calc(cnpj, weights1) === parseInt(cnpj[12]) &&
+    calc(cnpj, weights2) === parseInt(cnpj[13])
+  );
+}
+
+function validateCpf(cpf: string): boolean {
+  if (/^(\d)\1+$/.test(cpf)) return false; // todos iguais (ex: 11111111111)
+  const calc = (digits: string, length: number) => {
+    const sum = Array.from({ length }, (_, i) => parseInt(digits[i]) * (length + 1 - i)).reduce((a, b) => a + b, 0);
+    const r = (sum * 10) % 11;
+    return r >= 10 ? 0 : r;
+  };
+  return (
+    calc(cpf, 9) === parseInt(cpf[9]) &&
+    calc(cpf, 10) === parseInt(cpf[10])
+  );
+}
+
 export const CreateClientSchema = z.object({
   company: z
     .string()
@@ -40,8 +68,15 @@ export const CreateClientSchema = z.object({
 
   cpfCnpj: z
     .string()
-    .regex(/^\d{11}|\d{14}$/, 'CPF/CNPJ deve conter 11 ou 14 dígitos')
-    .transform((val) => val.replace(/\D/g, '')), // Remove caracteres não numéricos
+    .transform((val) => val.replace(/\D/g, ''))
+    .refine((val) => val.length === 11 || val.length === 14, {
+      message: 'CPF/CNPJ deve conter 11 ou 14 dígitos',
+    })
+    .refine((val) => {
+      if (val.length === 14) return validateCnpj(val);
+      if (val.length === 11) return validateCpf(val);
+      return false;
+    }, { message: 'CPF/CNPJ inválido (dígitos verificadores incorretos)' }),
 
   role: z
     .nativeEnum(ClientRole, {

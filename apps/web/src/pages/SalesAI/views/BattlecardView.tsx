@@ -37,22 +37,22 @@ export function BattlecardView({ leadContext }: BattlecardViewProps) {
   ];
 
   return (
-    <div className="flex-1 overflow-y-auto p-10 animate-in zoom-in-95 duration-500 custom-scrollbar">
-      <div className="max-w-5xl mx-auto space-y-8">
+    <div className="flex-1 overflow-y-auto p-4 md:p-10 animate-in zoom-in-95 duration-500 custom-scrollbar">
+      <div className="max-w-5xl mx-auto space-y-6 md:space-y-8">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <h2 className={`text-2xl font-black ${isDark ? 'text-white' : 'text-zinc-900'}`}>
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <h2 className={`text-lg md:text-2xl font-black ${isDark ? 'text-white' : 'text-zinc-900'}`}>
             Competitor Intelligence: Clinicorp
           </h2>
-          <span className="px-4 py-1.5 rounded-full bg-red-500/10 text-red-500 text-[10px] font-black uppercase tracking-widest">
+          <span className="self-start px-4 py-1.5 rounded-full bg-red-500/10 text-red-500 text-[10px] font-black uppercase tracking-widest">
             Ameaça: Moderada
           </span>
         </div>
 
         {/* Grid 2x2 */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-8">
           {/* Nossos Diferenciais */}
-          <div className={`p-8 rounded-3xl border ${isDark ? 'bg-green-500/5 border-green-500/10' : 'bg-green-50 border-green-200'}`}>
+          <div className={`p-4 md:p-8 rounded-2xl md:rounded-3xl border ${isDark ? 'bg-green-500/5 border-green-500/10' : 'bg-green-50 border-green-200'}`}>
             <h3 className="text-green-500 font-black text-xs uppercase tracking-widest mb-6 flex items-center gap-2">
               <Zap size={16}/> Nossos Diferenciais
             </h3>
@@ -67,7 +67,7 @@ export function BattlecardView({ leadContext }: BattlecardViewProps) {
           </div>
 
           {/* Fraquezas da Clinicorp */}
-          <div className={`p-8 rounded-3xl border ${isDark ? 'bg-red-500/5 border-red-500/10' : 'bg-red-50 border-red-200'}`}>
+          <div className={`p-4 md:p-8 rounded-2xl md:rounded-3xl border ${isDark ? 'bg-red-500/5 border-red-500/10' : 'bg-red-50 border-red-200'}`}>
             <h3 className="text-red-500 font-black text-xs uppercase tracking-widest mb-6 flex items-center gap-2">
               <ShieldAlert size={16}/> Fraquezas da Clinicorp
             </h3>
@@ -83,11 +83,11 @@ export function BattlecardView({ leadContext }: BattlecardViewProps) {
         </div>
 
         {/* Kill Shots */}
-        <div className={`p-8 rounded-3xl border ${isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200 shadow-sm'} space-y-6`}>
+        <div className={`p-4 md:p-8 rounded-2xl md:rounded-3xl border ${isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200 shadow-sm'} space-y-4 md:space-y-6`}>
           <h3 className={`text-xs font-black uppercase tracking-widest ${isDark ? 'text-zinc-100' : 'text-zinc-900'}`}>
             Como Desarmar (Kill Shots)
           </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
             {/* Pergunta de Reflexão */}
             <div className={`p-6 rounded-2xl border ${isDark ? 'bg-orange-500/5 border-orange-500/10' : 'bg-orange-50 border-orange-200'}`}>
               <h4 className="text-orange-500 text-[10px] font-black uppercase tracking-widest mb-3">

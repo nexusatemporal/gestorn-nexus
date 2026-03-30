@@ -33,24 +33,24 @@ export function CalendarEventDetail({ event, onClose, onEdit }: CalendarEventDet
 
   return (
     <Modal isOpen onClose={onClose} size="xl" showCloseButton={false}>
-      <div className="space-y-6">
+      <div className="space-y-4 md:space-y-6">
         {/* Header */}
         <div className="flex items-start justify-between">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3 md:gap-4">
             <div
-              className={`p-4 rounded-3xl text-white shadow-lg ${config.bgColor}`}
+              className={`p-3 md:p-4 rounded-2xl md:rounded-3xl text-white shadow-lg ${config.bgColor}`}
             >
-              <Calendar size={32} />
+              <Calendar size={24} className="md:w-8 md:h-8" />
             </div>
             <div>
-              <h2 className="text-2xl font-black text-white">{event.title}</h2>
-              <div className="flex items-center gap-3 mt-1">
+              <h2 className="text-lg md:text-2xl font-black text-white">{event.title}</h2>
+              <div className="flex items-center gap-2 md:gap-3 mt-1">
                 <span
-                  className={`text-[9px] font-black uppercase px-3 py-1 rounded-full text-white ${config.bgColor}`}
+                  className={`text-[9px] font-black uppercase px-2 md:px-3 py-1 rounded-full text-white ${config.bgColor}`}
                 >
                   {config.label}
                 </span>
-                <span className="text-xs font-bold uppercase tracking-widest text-zinc-500">
+                <span className="text-[10px] md:text-xs font-bold uppercase tracking-widest text-zinc-500">
                   ID: {event.id.slice(0, 8)}
                 </span>
               </div>
@@ -59,7 +59,7 @@ export function CalendarEventDetail({ event, onClose, onEdit }: CalendarEventDet
         </div>
 
         {/* Event Details */}
-        <div className="grid grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
           <div className="space-y-1">
             <span className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em] block">
               Data & Horário
@@ -99,7 +99,7 @@ export function CalendarEventDetail({ event, onClose, onEdit }: CalendarEventDet
             <h3 className="text-xs font-black uppercase text-nexus-orange mb-4 flex items-center gap-2 tracking-widest">
               <User size={14} /> Detalhes do {event.lead ? 'Lead' : 'Cliente'}
             </h3>
-            <div className="grid grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
               <div className="space-y-1">
                 <span className="text-[10px] font-bold text-zinc-500 uppercase">Nome</span>
                 <p className="text-sm font-bold text-white">
@@ -158,17 +158,17 @@ export function CalendarEventDetail({ event, onClose, onEdit }: CalendarEventDet
         )}
 
         {/* Actions */}
-        <div className="flex gap-3 pt-4 border-t border-zinc-800">
+        <div className="flex flex-col md:flex-row gap-2 md:gap-3 pt-4 border-t border-zinc-800">
           <Button
             onClick={handleDelete}
             variant="danger"
             size="sm"
             disabled={deleteMutation.isPending}
+            className="md:mr-auto"
           >
             <Trash2 size={16} />
             {deleteMutation.isPending ? ' Excluindo...' : ''}
           </Button>
-          <div className="flex-1" />
           <Button onClick={() => onEdit(event)} variant="secondary" size="sm">
             <Edit2 size={16} className="mr-2" />
             Editar

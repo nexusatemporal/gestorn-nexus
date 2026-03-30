@@ -497,12 +497,12 @@ export function CalendarEventForm({ event, defaultDate, onClose }: CalendarEvent
           </div>
         </div>
 
-        <div className="flex gap-4 pt-4">
+        <div className="flex flex-col-reverse md:flex-row gap-2 md:gap-4 pt-4">
           <Button
             type="button"
             onClick={onClose}
             variant="secondary"
-            className="flex-1"
+            className="w-full md:flex-1"
             disabled={isLoading}
           >
             Cancelar
@@ -510,7 +510,7 @@ export function CalendarEventForm({ event, defaultDate, onClose }: CalendarEvent
           <Button
             type="submit"
             variant="primary"
-            className="flex-1"
+            className="w-full md:flex-1"
             disabled={isLoading}
           >
             {isLoading ? 'Salvando...' : isEditing ? 'Atualizar' : 'Criar Evento'}

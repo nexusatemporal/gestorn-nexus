@@ -147,10 +147,10 @@ export function GeneratorView({ leadContext }: GeneratorViewProps) {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 md:space-y-6 p-4 md:p-6">
       {/* Header */}
       <div>
-        <h2 className="text-2xl font-bold text-nexus-orange">
+        <h2 className="text-lg md:text-2xl font-bold text-nexus-orange">
           Gerador de Conteúdo
         </h2>
         <p className={clsx('text-sm', isDark ? 'text-zinc-500' : 'text-zinc-600')}>
@@ -160,13 +160,13 @@ export function GeneratorView({ leadContext }: GeneratorViewProps) {
 
       {/* Content Type Selector */}
       <div className={clsx(
-        'p-6 rounded-3xl border',
+        'p-4 md:p-6 rounded-2xl md:rounded-3xl border',
         isDark ? 'bg-zinc-900/50 border-zinc-800' : 'bg-zinc-50 border-zinc-200'
       )}>
-        <h3 className={clsx('text-sm font-bold mb-4', isDark ? 'text-zinc-300' : 'text-zinc-700')}>
+        <h3 className={clsx('text-sm font-bold mb-3 md:mb-4', isDark ? 'text-zinc-300' : 'text-zinc-700')}>
           Tipo de Conteúdo
         </h3>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-3 md:gap-4 grid-cols-2 md:grid-cols-2 lg:grid-cols-4">
           {CONTENT_TYPES.map((type) => {
             const Icon = type.icon;
             const isSelected = selectedType === type.value;
@@ -176,7 +176,7 @@ export function GeneratorView({ leadContext }: GeneratorViewProps) {
                 key={type.value}
                 onClick={() => setSelectedType(type.value)}
                 className={clsx(
-                  'p-6 rounded-2xl border text-left transition-all',
+                  'p-3 md:p-6 rounded-xl md:rounded-2xl border text-left transition-all',
                   isSelected
                     ? 'bg-nexus-orange/10 border-nexus-orange'
                     : isDark
@@ -186,7 +186,7 @@ export function GeneratorView({ leadContext }: GeneratorViewProps) {
               >
                 <div
                   className={clsx(
-                    'w-10 h-10 rounded-xl flex items-center justify-center mb-3',
+                    'w-8 h-8 md:w-10 md:h-10 rounded-lg md:rounded-xl flex items-center justify-center mb-2 md:mb-3',
                     isSelected
                       ? 'bg-nexus-orange text-white'
                       : isDark
@@ -208,7 +208,7 @@ export function GeneratorView({ leadContext }: GeneratorViewProps) {
 
       {/* Instructions */}
       <div className={clsx(
-        'p-6 rounded-3xl border',
+        'p-4 md:p-6 rounded-2xl md:rounded-3xl border',
         isDark ? 'bg-zinc-900/50 border-zinc-800' : 'bg-zinc-50 border-zinc-200'
       )}>
         <h3 className={clsx('text-sm font-bold mb-2', isDark ? 'text-zinc-300' : 'text-zinc-700')}>
@@ -227,7 +227,7 @@ export function GeneratorView({ leadContext }: GeneratorViewProps) {
           }
           rows={4}
           className={clsx(
-            'w-full h-24 p-4 rounded-2xl border text-sm resize-none outline-none focus:ring-2 focus:ring-nexus-orange/20',
+            'w-full p-4 rounded-2xl border text-sm resize-none outline-none focus:ring-2 focus:ring-nexus-orange/20',
             isDark
               ? 'bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-600'
               : 'bg-white border-zinc-300 text-zinc-900 placeholder:text-zinc-400'
@@ -262,7 +262,7 @@ export function GeneratorView({ leadContext }: GeneratorViewProps) {
       {/* Loading */}
       {generateContent.isPending && (
         <div className={clsx(
-          'p-8 rounded-3xl border',
+          'p-4 md:p-8 rounded-2xl md:rounded-3xl border',
           isDark ? 'bg-zinc-900/30 border-zinc-800' : 'bg-zinc-50 border-zinc-200'
         )}>
           <LoadingIndicator size="lg" text="Gerando conteúdo personalizado..." />
@@ -272,7 +272,7 @@ export function GeneratorView({ leadContext }: GeneratorViewProps) {
       {/* Generated Content */}
       {generatedContent && !generateContent.isPending && (
         <div className={clsx(
-          'p-8 rounded-3xl border',
+          'p-4 md:p-8 rounded-2xl md:rounded-3xl border',
           isDark ? 'bg-zinc-900/30 border-zinc-800' : 'bg-zinc-50 border-zinc-200'
         )}>
           <div className="flex items-center justify-between mb-4">

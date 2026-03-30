@@ -5,6 +5,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { AxiosError } from 'axios';
+import { toast } from 'sonner';
 import { api } from '@/services/api';
 import type {
   CalendarEvent,
@@ -132,8 +133,11 @@ export function useCreateCalendarEvent() {
       return data;
     },
     onSuccess: () => {
-      // Invalidar todas as listas de eventos
       queryClient.invalidateQueries({ queryKey: calendarKeys.events() });
+      toast.success('Evento criado com sucesso!');
+    },
+    onError: (e: any) => {
+      toast.error(e?.response?.data?.message || 'Erro ao criar evento');
     },
   });
 }
@@ -177,10 +181,12 @@ export function useUpdateCalendarEvent() {
       return response.data;
     },
     onSuccess: (data) => {
-      // Invalidar lista de eventos
       queryClient.invalidateQueries({ queryKey: calendarKeys.events() });
-      // Atualizar cache do evento específico
       queryClient.setQueryData(calendarKeys.event(data.id), data);
+      toast.success('Evento atualizado!');
+    },
+    onError: (e: any) => {
+      toast.error(e?.response?.data?.message || 'Erro ao atualizar evento');
     },
   });
 }
@@ -208,10 +214,12 @@ export function useDeleteCalendarEvent() {
       return data;
     },
     onSuccess: (_, deletedId) => {
-      // Invalidar lista de eventos
       queryClient.invalidateQueries({ queryKey: calendarKeys.events() });
-      // Remover evento do cache
       queryClient.removeQueries({ queryKey: calendarKeys.event(deletedId) });
+      toast.success('Evento removido.');
+    },
+    onError: (e: any) => {
+      toast.error(e?.response?.data?.message || 'Erro ao remover evento');
     },
   });
 }

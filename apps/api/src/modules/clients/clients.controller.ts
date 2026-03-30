@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Put,
+  Patch,
   Delete,
   Body,
   Param,
@@ -10,7 +11,9 @@ import {
   UsePipes,
   HttpCode,
   HttpStatus,
+  Req,
 } from '@nestjs/common';
+import { Request } from 'express';
 import { ClientsService } from './clients.service';
 import { CreateClientDto, CreateClientSchema } from './dto/create-client.dto';
 import { UpdateClientDto, UpdateClientSchema } from './dto/update-client.dto';
@@ -19,6 +22,7 @@ import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { UserRole, ClientStatus, ProductType } from '@prisma/client';
 import { ZodValidationPipe } from '@/common/pipes/zod-validation.pipe';
 import { AuthUser } from '@/common/interfaces/auth-user.interface';
+import { z } from 'zod';
 
 /**
  * Clients Controller
@@ -116,11 +120,6 @@ export class ClientsController {
     @Body(new ZodValidationPipe(CreateClientSchema)) dto: CreateClientDto,
     @CurrentUser() user: AuthUser,
   ) {
-    // 🔍 DEBUG: Log payload recebido APÓS validação
-    console.log('\n✅ [CREATE CLIENT] Payload validado:');
-    console.log(JSON.stringify(dto, null, 2));
-    console.log('\n');
-
     return this.clientsService.create(dto, user.id, user.role);
   }
 
@@ -165,6 +164,52 @@ export class ClientsController {
   @Roles(UserRole.SUPERADMIN, UserRole.ADMINISTRATIVO)
   async reactivate(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     return this.clientsService.reactivate(id, user.id, user.role);
+  }
+
+  /**
+   * POST /clients/:id/impersonate
+   * Inicia sessão de impersonate para um cliente One Nexus
+   *
+   * REQUER: SUPERADMIN, DESENVOLVEDOR ou GESTOR
+   */
+  @Post(':id/impersonate')
+  @Roles(UserRole.SUPERADMIN, UserRole.DESENVOLVEDOR, UserRole.GESTOR)
+  async startImpersonate(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(z.object({ reason: z.string().min(3, 'Motivo deve ter pelo menos 3 caracteres').max(500) }))) dto: { reason: string },
+    @CurrentUser() user: AuthUser,
+    @Req() req: Request,
+  ) {
+    const ip = (req.headers['x-forwarded-for'] as string) || req.ip || 'unknown';
+    const ua = req.headers['user-agent'] || '';
+    return this.clientsService.startImpersonate(id, user, dto.reason, ip, ua);
+  }
+
+  /**
+   * PATCH /clients/:id/impersonate/:logId/end
+   * Encerra sessão de impersonate
+   *
+   * REQUER: SUPERADMIN, DESENVOLVEDOR ou GESTOR
+   */
+  @Patch(':id/impersonate/:logId/end')
+  @Roles(UserRole.SUPERADMIN, UserRole.DESENVOLVEDOR, UserRole.GESTOR)
+  async endImpersonate(
+    @Param('logId') logId: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.clientsService.endImpersonate(logId, user);
+  }
+
+  /**
+   * GET /clients/:id/impersonate-logs
+   * Busca histórico de impersonate do cliente
+   *
+   * REQUER: SUPERADMIN, DESENVOLVEDOR ou GESTOR
+   */
+  @Get(':id/impersonate-logs')
+  @Roles(UserRole.SUPERADMIN, UserRole.DESENVOLVEDOR, UserRole.GESTOR)
+  async getImpersonateLogs(@Param('id') id: string) {
+    return this.clientsService.getClientImpersonateLogs(id);
   }
 
   /**

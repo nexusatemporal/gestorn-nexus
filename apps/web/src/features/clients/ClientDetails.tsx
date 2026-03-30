@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 import { useApiQuery, useApiMutation } from '@/hooks/useApi';
 import {
   Button,
@@ -14,6 +15,7 @@ import {
 import { Client, ClientStatus, ProductType, Payment } from '@/types';
 import { formatCPF, formatCNPJ, formatPhone, formatDate, formatCurrency } from '@/utils/formatters';
 import { ClientForm } from './ClientForm';
+import { ClientModulesTab } from './components/ClientModulesTab';
 
 const CLIENT_STATUS_LABELS: Record<ClientStatus, string> = {
   [ClientStatus.EM_TRIAL]: 'Em Trial',
@@ -38,7 +40,7 @@ export function ClientDetails() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [isFormOpen, setIsFormOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'info' | 'payments'>('info');
+  const [activeTab, setActiveTab] = useState<'info' | 'payments' | 'modules'>('info');
 
   const { data: client, isLoading, refetch } = useApiQuery<Client>(
     ['clients', id],
@@ -50,8 +52,8 @@ export function ClientDetails() {
     `/payments?clientId=${id}`
   );
 
-  const cancelMutation = useApiMutation(`/clients/${id}/cancel`, { method: 'PATCH' });
-  const reactivateMutation = useApiMutation(`/clients/${id}/reactivate`, { method: 'PATCH' });
+  const cancelMutation = useApiMutation(`/clients/${id}/cancel`, { method: 'POST' });
+  const reactivateMutation = useApiMutation(`/clients/${id}/reactivate`, { method: 'POST' });
 
   const handleEdit = () => {
     setIsFormOpen(true);
@@ -67,18 +69,20 @@ export function ClientDetails() {
 
     try {
       await cancelMutation.mutateAsync({});
+      toast.success('Cliente cancelado com sucesso');
       refetch();
     } catch (error) {
-      console.error('Erro ao cancelar cliente:', error);
+      toast.error('Erro ao cancelar cliente');
     }
   };
 
   const handleReactivate = async () => {
     try {
       await reactivateMutation.mutateAsync({});
+      toast.success('Cliente reativado com sucesso');
       refetch();
     } catch (error) {
-      console.error('Erro ao reativar cliente:', error);
+      toast.error('Erro ao reativar cliente');
     }
   };
 
@@ -140,9 +144,10 @@ export function ClientDetails() {
   ];
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
+    <div className="space-y-4 md:space-y-6 p-3 md:p-0">
+      {/* Header — responsivo: empilha no mobile */}
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:gap-4">
           <Button
             variant="ghost"
             size="sm"
@@ -151,17 +156,19 @@ export function ClientDetails() {
           >
             Voltar
           </Button>
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">{client.contactName}</h1>
-            {client.company && (
-              <p className="mt-1 text-sm text-gray-600">{client.company}</p>
-            )}
+          <div className="flex items-center gap-3">
+            <div>
+              <h1 className="text-xl md:text-3xl font-bold text-gray-900">{client.contactName}</h1>
+              {client.company && (
+                <p className="mt-0.5 md:mt-1 text-xs md:text-sm text-gray-600">{client.company}</p>
+              )}
+            </div>
+            <Badge variant={CLIENT_STATUS_VARIANTS[client.status]}>
+              {CLIENT_STATUS_LABELS[client.status]}
+            </Badge>
           </div>
-          <Badge variant={CLIENT_STATUS_VARIANTS[client.status]}>
-            {CLIENT_STATUS_LABELS[client.status]}
-          </Badge>
         </div>
-        <div className="flex gap-3">
+        <div className="flex gap-2 md:gap-3">
           {client.status === ClientStatus.CANCELADO && (
             <Button
               variant="primary"
@@ -178,7 +185,8 @@ export function ClientDetails() {
                 onClick={handleCancel}
                 isLoading={cancelMutation.isPending}
               >
-                Cancelar Cliente
+                <span className="hidden md:inline">Cancelar Cliente</span>
+                <span className="md:hidden">Cancelar</span>
               </Button>
               <Button variant="primary" onClick={handleEdit}>
                 Editar
@@ -189,10 +197,10 @@ export function ClientDetails() {
       </div>
 
       <div className="border-b border-gray-200">
-        <nav className="flex gap-8">
+        <nav className="flex gap-4 md:gap-8 overflow-x-auto no-scrollbar">
           <button
             onClick={() => setActiveTab('info')}
-            className={`py-2 px-1 border-b-2 font-medium text-sm transition-colors ${
+            className={`py-2 px-2 md:px-1 border-b-2 font-medium text-sm transition-colors whitespace-nowrap ${
               activeTab === 'info'
                 ? 'border-primary-600 text-primary-600'
                 : 'border-transparent text-gray-600 hover:text-gray-900'
@@ -202,7 +210,7 @@ export function ClientDetails() {
           </button>
           <button
             onClick={() => setActiveTab('payments')}
-            className={`py-2 px-1 border-b-2 font-medium text-sm transition-colors ${
+            className={`py-2 px-2 md:px-1 border-b-2 font-medium text-sm transition-colors whitespace-nowrap ${
               activeTab === 'payments'
                 ? 'border-primary-600 text-primary-600'
                 : 'border-transparent text-gray-600 hover:text-gray-900'
@@ -210,11 +218,21 @@ export function ClientDetails() {
           >
             Pagamentos ({payments?.length || 0})
           </button>
+          <button
+            onClick={() => setActiveTab('modules')}
+            className={`py-2 px-2 md:px-1 border-b-2 font-medium text-sm transition-colors whitespace-nowrap ${
+              activeTab === 'modules'
+                ? 'border-primary-600 text-primary-600'
+                : 'border-transparent text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            Módulos
+          </button>
         </nav>
       </div>
 
       {activeTab === 'info' && (
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 md:gap-6 md:grid-cols-2">
           <Card variant="bordered">
             <CardHeader>
               <h3 className="font-semibold text-gray-900">Informações do Cliente</h3>
@@ -288,16 +306,50 @@ export function ClientDetails() {
           </CardHeader>
           <CardBody className="p-0">
             {payments && payments.length > 0 ? (
-              <DataTable
-                data={payments}
-                columns={paymentColumns}
-                keyExtractor={(payment) => payment.id}
-              />
+              <>
+                {/* Mobile: card view */}
+                <div className="md:hidden divide-y divide-gray-100">
+                  {payments.map((payment) => {
+                    const statusVariants = { PENDING: 'warning', PAID: 'success', OVERDUE: 'danger', CANCELLED: 'default' } as const;
+                    const statusLabels = { PENDING: 'Pendente', PAID: 'Pago', OVERDUE: 'Vencido', CANCELLED: 'Cancelado' };
+                    return (
+                      <div key={payment.id} className="px-4 py-3 flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">{formatCurrency(payment.amount)}</p>
+                          <p className="text-xs text-gray-500 mt-0.5">{formatDate(payment.dueDate)}{payment.gateway ? ` · ${payment.gateway}` : ''}</p>
+                        </div>
+                        <Badge variant={statusVariants[payment.status as keyof typeof statusVariants]} size="sm">
+                          {statusLabels[payment.status as keyof typeof statusLabels]}
+                        </Badge>
+                      </div>
+                    );
+                  })}
+                </div>
+                {/* Desktop: table view */}
+                <div className="hidden md:block">
+                  <DataTable
+                    data={payments}
+                    columns={paymentColumns}
+                    keyExtractor={(payment) => payment.id}
+                  />
+                </div>
+              </>
             ) : (
               <div className="py-12 text-center text-gray-500">
                 Nenhum pagamento registrado
               </div>
             )}
+          </CardBody>
+        </Card>
+      )}
+
+      {activeTab === 'modules' && id && (
+        <Card variant="bordered">
+          <CardHeader>
+            <h3 className="font-semibold text-gray-900">Módulos One Nexus</h3>
+          </CardHeader>
+          <CardBody>
+            <ClientModulesTab clientId={id} />
           </CardBody>
         </Card>
       )}

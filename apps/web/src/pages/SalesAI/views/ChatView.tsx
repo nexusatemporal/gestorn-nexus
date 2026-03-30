@@ -87,9 +87,9 @@ export function ChatView({ leadContext, provider = 'groq' }: ChatViewProps) {
   }
 
   return (
-    <div className="flex h-full flex-col max-h-full overflow-hidden">
+    <div className="flex-1 flex flex-col min-h-0">
       {/* Chat Messages */}
-      <div className="flex-1 p-8 space-y-6 overflow-y-auto min-h-0 custom-scrollbar">
+      <div className="flex-1 p-3 md:p-6 space-y-4 md:space-y-6 overflow-y-auto min-h-0 custom-scrollbar">
         {messages.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center text-center">
             <Sparkles size={48} className="mb-4 text-orange-500" />
@@ -200,8 +200,8 @@ export function ChatView({ leadContext, provider = 'groq' }: ChatViewProps) {
       )}
 
       {/* Input Area */}
-      <div className={clsx('p-8 border-t', isDark ? 'bg-zinc-950/50 border-zinc-800' : 'bg-zinc-50 border-zinc-200')}>
-        <div className={clsx('relative flex items-center border rounded-2xl p-2 transition-all focus-within:ring-2 focus-within:ring-orange-500/30', isDark ? 'bg-zinc-900 border-zinc-700' : 'bg-white border-zinc-300 shadow-lg shadow-black/5')}>
+      <div className={clsx('px-3 md:px-6 py-3 border-t shrink-0', isDark ? 'bg-zinc-950/50 border-zinc-800' : 'bg-zinc-50 border-zinc-200')}>
+        <div className={clsx('relative flex items-center border rounded-2xl p-1.5 md:p-2 transition-all focus-within:ring-2 focus-within:ring-orange-500/30', isDark ? 'bg-zinc-900 border-zinc-700' : 'bg-white border-zinc-300 shadow-lg shadow-black/5')}>
           <input
             type="text"
             value={inputMessage}
@@ -212,8 +212,8 @@ export function ChatView({ leadContext, provider = 'groq' }: ChatViewProps) {
                 handleSendMessage();
               }
             }}
-            placeholder="Pergunte ao seu copiloto: 'Como quebrar a objeção de preço?' ou 'Gere um pitch para este lead'..."
-            className={clsx('flex-1 bg-transparent border-none focus:ring-0 px-4 py-3 text-sm outline-none', isDark ? 'text-white placeholder-zinc-600' : 'text-zinc-900 placeholder-zinc-400')}
+            placeholder="Pergunte ao copiloto..."
+            className={clsx('flex-1 bg-transparent border-none focus:ring-0 px-3 md:px-4 py-3 text-sm outline-none', isDark ? 'text-white placeholder-zinc-600' : 'text-zinc-900 placeholder-zinc-400')}
             disabled={chatMutation.isPending}
           />
           <button

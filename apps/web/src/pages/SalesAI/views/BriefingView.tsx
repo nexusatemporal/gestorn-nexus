@@ -4,17 +4,30 @@
  * ══════════════════════════════════════════════════════════════════════════
  */
 
+import { useMemo } from 'react';
 import { Target, Download, Check, ShieldAlert } from 'lucide-react';
 import type { LeadContext } from '@/hooks/useSalesAI';
 import { useUIStore } from '@/stores/useUIStore';
 
 interface BriefingViewProps {
   leadContext: LeadContext | null;
+  onSwitchToChat?: () => void;
 }
 
-export function BriefingView({ leadContext }: BriefingViewProps) {
+export function BriefingView({ leadContext, onSwitchToChat }: BriefingViewProps) {
   const theme = useUIStore((state) => state.theme);
   const isDark = theme === 'dark';
+
+  // Valores derivados do leadContext — estáveis por lead, sem Math.random() no render
+  const seedFromId = useMemo(() => {
+    const n = leadContext?.id
+      ? leadContext.id.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0)
+      : 42;
+    return n;
+  }, [leadContext?.id]);
+
+  const yearsActive  = useMemo(() => (seedFromId % 10) + 3, [seedFromId]);
+  const patientsPerMonth = useMemo(() => ((seedFromId % 5) + 2) * 100, [seedFromId]);
 
   if (!leadContext) {
     return (
@@ -25,27 +38,27 @@ export function BriefingView({ leadContext }: BriefingViewProps) {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto p-10 animate-in slide-in-from-right-10 duration-500 custom-scrollbar">
-      <div className={`max-w-4xl mx-auto p-10 rounded-3xl border shadow-2xl ${isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200 shadow-black/10'}`}>
+    <div className="flex-1 overflow-y-auto p-4 md:p-10 animate-in slide-in-from-right-10 duration-500 custom-scrollbar">
+      <div className={`max-w-4xl mx-auto p-4 md:p-10 rounded-2xl md:rounded-3xl border shadow-2xl ${isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200 shadow-black/10'}`}>
         {/* Header */}
-        <div className="flex justify-between items-center mb-10 pb-6 border-b border-zinc-800/50">
-          <div className="flex items-center gap-4">
-            <div className="p-3 bg-orange-500 text-white rounded-2xl shadow-lg shadow-orange-500/20">
-              <Target size={32} />
+        <div className="flex justify-between items-start md:items-center mb-6 md:mb-10 pb-4 md:pb-6 border-b border-zinc-800/50">
+          <div className="flex items-center gap-3 md:gap-4">
+            <div className="p-2 md:p-3 bg-orange-500 text-white rounded-xl md:rounded-2xl shadow-lg shadow-orange-500/20">
+              <Target size={24} className="md:w-8 md:h-8" />
             </div>
             <div>
-              <h2 className={`text-2xl font-black ${isDark ? 'text-white' : 'text-zinc-900'}`}>Pre-Call Briefing</h2>
-              <p className="text-sm text-zinc-500">Preparado para {leadContext.name} às {new Date().getHours()}:00</p>
+              <h2 className={`text-lg md:text-2xl font-black ${isDark ? 'text-white' : 'text-zinc-900'}`}>Pre-Call Briefing</h2>
+              <p className="text-xs md:text-sm text-zinc-500">Preparado para {leadContext.name} às {new Date().getHours()}:00</p>
             </div>
           </div>
-          <button className="p-3 rounded-xl hover:bg-zinc-800 text-zinc-500 transition-all border border-zinc-800">
-            <Download size={20} />
+          <button className="p-2 md:p-3 rounded-xl hover:bg-zinc-800 text-zinc-500 transition-all border border-zinc-800">
+            <Download size={18} className="md:w-5 md:h-5" />
           </button>
         </div>
 
-        <div className="space-y-10">
+        <div className="space-y-6 md:space-y-10">
           {/* Objetivo e Contexto */}
-          <section className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          <section className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-8">
             <div className="space-y-4">
               <h4 className="text-[10px] font-black uppercase tracking-widest text-orange-500">Objetivo Sugerido</h4>
               <p className={`text-sm leading-relaxed ${isDark ? 'text-zinc-200' : 'text-zinc-700'}`}>
@@ -56,7 +69,7 @@ export function BriefingView({ leadContext }: BriefingViewProps) {
               <h4 className="text-[10px] font-black uppercase tracking-widest text-indigo-400">Contexto em 3 Pontos</h4>
               <ul className="space-y-2">
                 {[
-                  `${leadContext.company || 'Clínica'} opera há ${Math.floor(Math.random() * 10 + 3)} anos, atende em média ${Math.floor(Math.random() * 500 + 200)} pacientes/mês.`,
+                  `${leadContext.company || 'Clínica'} opera há ${yearsActive} anos, atende em média ${patientsPerMonth} pacientes/mês.`,
                   `Tem histórico de interesse em automação de gestão de unidades múltiplas.`,
                   `Verificando logs do tenant para análise de uso prioritário.`
                 ].map((p, i) => (
@@ -75,7 +88,7 @@ export function BriefingView({ leadContext }: BriefingViewProps) {
             </h4>
             <div className="grid gap-4">
               {[
-                "Considerando o seu volume atual de {leadContext.company}, qual é o impacto financeiro de um erro de faturamento hoje?",
+                `Considerando o seu volume atual de ${leadContext.company || 'sua clínica'}, qual é o impacto financeiro de um erro de faturamento hoje?`,
                 "Se você pudesse investir o tempo que gasta em burocracia em marketing/expansão, quanto a clínica cresceria?",
                 "Hoje, qual é o maior obstáculo para você abrir uma segunda unidade da clínica?"
               ].map((q, i) => (
@@ -98,8 +111,11 @@ export function BriefingView({ leadContext }: BriefingViewProps) {
         </div>
 
         {/* CTA */}
-        <div className="mt-12 flex justify-center">
-          <button className="px-8 py-3 bg-orange-500 text-white rounded-2xl text-sm font-bold shadow-xl shadow-orange-500/20 transition-all active:scale-95">
+        <div className="mt-8 md:mt-12 flex justify-center">
+          <button
+            onClick={onSwitchToChat}
+            className="px-8 py-3 bg-orange-500 text-white rounded-2xl text-sm font-bold shadow-xl shadow-orange-500/20 transition-all active:scale-95"
+          >
             Iniciar Chat com Briefing
           </button>
         </div>

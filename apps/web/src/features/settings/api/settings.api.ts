@@ -69,12 +69,25 @@ export const settingsApi = {
     return data;
   },
 
-  async deactivateUser(id: string) {
+  async deleteUser(id: string) {
     await api.delete(`/users/${id}`);
   },
 
-  async restoreUser(id: string) {
-    const { data } = await api.post<User>(`/users/${id}/restore`);
+  async resendEmail(id: string) {
+    const { data } = await api.post<{ message: string }>(`/users/${id}/resend-email`);
+    return data;
+  },
+
+  async updateProfile(dto: UpdateUserDto) {
+    const { data } = await api.put<User>('/users/me', dto);
+    return data;
+  },
+
+  async changePassword(id: string, currentPassword: string, newPassword: string) {
+    const { data } = await api.patch<{ message: string }>(`/users/${id}/password`, {
+      currentPassword,
+      newPassword,
+    });
     return data;
   },
 };

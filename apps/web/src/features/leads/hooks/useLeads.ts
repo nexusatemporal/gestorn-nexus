@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { leadsApi, funnelStagesApi, usersApi, plansApi, leadOriginsApi } from '../services/leads.api';
 import type {
   CreateLeadDto,
@@ -36,7 +37,11 @@ export const useCreateLead = () => {
     mutationFn: (payload: CreateLeadDto) => leadsApi.createLead(payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['leads'], exact: false });
-      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'], exact: false }); // ✅ v2.50.3: Auto-refresh dashboard
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'], exact: false });
+      toast.success('Lead criado com sucesso!');
+    },
+    onError: (e: any) => {
+      toast.error(e?.response?.data?.message || 'Erro ao criar lead');
     },
   });
 };
@@ -62,9 +67,12 @@ export const useDeleteLead = () => {
     mutationFn: (id: string) => leadsApi.deleteLead(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['leads'], exact: false });
-      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'], exact: false }); // ✅ v2.50.3: Auto-refresh dashboard
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'], exact: false });
+      toast.success('Lead removido.');
     },
-    onError: () => {},
+    onError: (e: any) => {
+      toast.error(e?.response?.data?.message || 'Erro ao remover lead');
+    },
   });
 };
 
@@ -79,16 +87,17 @@ export const useConvertLead = () => {
     mutationFn: ({ leadId, payload }: { leadId: string; payload: ConvertLeadPayload }) =>
       leadsApi.convert(leadId, payload),
     onSuccess: () => {
-      // Invalida queries relacionadas
       queryClient.invalidateQueries({ queryKey: ['leads'], exact: false });
       queryClient.invalidateQueries({ queryKey: ['clients'], exact: false });
       queryClient.invalidateQueries({ queryKey: ['transactions'], exact: false });
       queryClient.invalidateQueries({ queryKey: ['payments'], exact: false });
-      queryClient.invalidateQueries({ queryKey: ['finance'], exact: false }); // ✅ v2.43.0: Invalida finance para atualizar transações
-      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'], exact: false }); // ✅ v2.50.3: Auto-refresh dashboard
-
+      queryClient.invalidateQueries({ queryKey: ['finance'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'], exact: false });
+      toast.success('Lead convertido em cliente!');
     },
-    onError: () => {},
+    onError: (e: any) => {
+      toast.error(e?.response?.data?.message || 'Erro ao converter lead');
+    },
   });
 };
 

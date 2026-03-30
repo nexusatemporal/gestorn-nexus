@@ -15,6 +15,10 @@ export function setTokenGetter(fn: () => string | null) {
   getTokenFunction = fn;
 }
 
+export function getAccessToken(): string | null {
+  return getTokenFunction ? getTokenFunction() : null;
+}
+
 // ──────────────────────────────────────────────────────────────────────────
 // Axios Instance
 // ──────────────────────────────────────────────────────────────────────────

@@ -1,4 +1,5 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { useEffect } from 'react';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AppLayout } from '@/components/layout';
 import { Dashboard } from '@/features/dashboard';
 import { ClientsList, ClientDetails } from '@/features/clients';
@@ -8,17 +9,47 @@ import { PaymentsDashboard } from '@/features/payments';
 import { CalendarView } from '@/features/calendar/components';
 import { Finance } from '@/features/finance';
 import SalesAI from '@/pages/SalesAI/SalesAI';
+import NotificationsPage from '@/pages/Notifications/NotificationsPage';
 import { Settings } from '@/features/settings';
 import { useUIStore } from '@/stores/useUIStore';
 import { useAuth } from '@/contexts/AuthContext';
 import { Login } from '@/pages/Login/Login';
+import { FormsPage } from '@/features/forms/FormsPage';
+import { FormBuilder } from '@/features/forms/FormBuilder';
+import { FormSubmissions } from '@/features/forms/FormSubmissions';
+import { PublicForm } from '@/pages/PublicForm/PublicForm';
+import { ChatPage } from '@/features/chat/ChatPage';
+import { AccountPage } from '@/pages/Account/AccountPage';
+import { pushNotificationService } from '@/services/push-notification.service';
 
 function App() {
   const { isAuthenticated, isLoading, user } = useAuth();
   const { theme } = useUIStore();
+  const location = useLocation();
   const isDark = theme === 'dark';
 
+  // Initialize push notifications when authenticated
+  useEffect(() => {
+    if (isAuthenticated && !isLoading) {
+      pushNotificationService.init();
+    }
+    return () => {
+      if (!isAuthenticated) {
+        pushNotificationService.cleanup();
+      }
+    };
+  }, [isAuthenticated, isLoading]);
+
   const userRole = (user?.role as UserRole) || UserRole.VENDEDOR;
+
+  // Rota pública do form — acessível sem autenticação
+  if (location.pathname.startsWith('/f/')) {
+    return (
+      <Routes>
+        <Route path="/f/:slug" element={<PublicForm />} />
+      </Routes>
+    );
+  }
 
   if (isLoading) {
     return (
@@ -44,6 +75,13 @@ function App() {
             <Route path="/finance" element={<Finance />} />
             <Route path="/calendar" element={<CalendarView />} />
             <Route path="/sales-ai" element={<SalesAI />} />
+            <Route path="/forms" element={<FormsPage />} />
+            <Route path="/forms/new" element={<FormBuilder />} />
+            <Route path="/forms/:id/edit" element={<FormBuilder />} />
+            <Route path="/forms/:id/submissions" element={<FormSubmissions />} />
+            <Route path="/chat" element={<ChatPage />} />
+            <Route path="/notifications" element={<NotificationsPage />} />
+            <Route path="/account" element={<AccountPage />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>

@@ -1,4 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { createPortal } from 'react-dom';
+import { useSearchParams } from 'react-router-dom';
 import {
   Plus,
   Search,
@@ -21,11 +23,22 @@ import {
   Lock,
   CalendarDays,
   RefreshCw,
+  LayoutGrid,
+  Users,
+  ChevronDown,
 } from 'lucide-react';
+import { ClientModulesTab } from './ClientModulesTab';
 import { useUIStore } from '@/stores/useUIStore';
 import { useApiQuery } from '@/hooks/useApi';
 import { api } from '@/services/api';
 import { useQueryClient } from '@tanstack/react-query'; // v2.44.0: Invalidação de cache
+import { toast } from 'sonner';
+import {
+  useStartImpersonate,
+  useEndImpersonate,
+  useClientImpersonateLogs,
+  type ImpersonateLog,
+} from '../hooks/useClientModules';
 import {
   ClientStatus,
   ProductType,
@@ -152,7 +165,7 @@ const StatusBadge: React.FC<{ status: ClientStatus }> = ({ status }) => {
 
   return (
     <span
-      className={`px-2.5 py-1 rounded-full text-xs font-medium border ${styles[status]}`}
+      className={`px-2.5 py-1 rounded-full text-xs font-medium border whitespace-nowrap ${styles[status]}`}
     >
       {labels[status]}
     </span>
@@ -199,6 +212,9 @@ const ClientFormModal: React.FC<{
   // ✅ v2.45.2: Estado de etapa do modal (1 = dados cliente, 2 = dados plano)
   const [currentStep, setCurrentStep] = useState<1 | 2>(1);
 
+  // ✅ v2.63.2: Prevenir double submission
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   const [formData, setFormData] = useState<Partial<ClientExtended>>(
     client ? {
       ...client,
@@ -206,7 +222,7 @@ const ClientFormModal: React.FC<{
       cpfCnpj: formatCnpj(client.cpfCnpj || ''), // ✅ v2.45.3: Aplicar formatação para exibição
       billingCycle: client.billingCycle || BillingCycle.MONTHLY, // ✅ Garantir valor definido
       role: client.role ? mapApiRoleToDisplay(client.role) : ROLES[0], // ✅ v2.45.0: Map backend enum to display
-      billingAnchorDay: client.subscriptions?.[0]?.billingAnchorDay || new Date().getDate(), // ✅ v2.46.0: Ler da Subscription ativa
+      billingAnchorDay: client.subscriptions?.[0]?.billingAnchorDay || Math.min(new Date().getDate(), 28), // ✅ v2.46.0: Ler da Subscription ativa
     } : {
       company: '',
       contactName: '',
@@ -219,7 +235,7 @@ const ClientFormModal: React.FC<{
       billingCycle: BillingCycle.MONTHLY, // Default apenas para CREATE
       status: ClientStatus.EM_TRIAL, // ✅ v2.45.0: Default status
       numberOfUsers: 1, // ✅ v2.45.0: Default number of users
-      billingAnchorDay: new Date().getDate(), // ✅ v2.46.0: Default = dia de hoje (1-28)
+      billingAnchorDay: Math.min(new Date().getDate(), 28), // ✅ v2.46.0: Default = dia de hoje (max 28)
       closedAt: new Date().toISOString().split('T')[0], // ✅ v2.45.1: Data de fechamento (YYYY-MM-DD)
     }
   );
@@ -233,7 +249,7 @@ const ClientFormModal: React.FC<{
         cpfCnpj: formatCnpj(client.cpfCnpj || ''),
         billingCycle: client.billingCycle || BillingCycle.MONTHLY,
         role: client.role ? mapApiRoleToDisplay(client.role) : ROLES[0],
-        billingAnchorDay: client?.subscriptions?.[0]?.billingAnchorDay || new Date().getDate(),
+        billingAnchorDay: client?.subscriptions?.[0]?.billingAnchorDay || Math.min(new Date().getDate(), 28),
       });
     }
   }, [client]);
@@ -303,6 +319,8 @@ const ClientFormModal: React.FC<{
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return; // ✅ v2.63.2: Guard contra double submission
+    setIsSubmitting(true);
 
     try {
       const payload: any = {
@@ -329,7 +347,7 @@ const ClientFormModal: React.FC<{
         payload.cpfCnpj = formData.cpfCnpj?.replace(/\D/g, ''); // ✅ v2.45.0: Remove formatting
         payload.role = mapRoleToApi(formData.role); // ✅ v2.45.0: Map to backend enum
         payload.numberOfUsers = formData.numberOfUsers || 1; // ✅ v2.45.0: Default 1
-        payload.billingAnchorDay = formData.billingAnchorDay || new Date().getDate(); // ✅ v2.46.0: Dia de vencimento (1-28)
+        payload.billingAnchorDay = formData.billingAnchorDay || Math.min(new Date().getDate(), 28); // ✅ v2.46.0: Dia de vencimento (max 28)
 
         // ✅ v2.45.1: Campos de handoff mínimos (Sales → CS)
         payload.closedAt = formData.closedAt || new Date().toISOString().split('T')[0]; // Data de fechamento
@@ -347,18 +365,20 @@ const ClientFormModal: React.FC<{
       // Exibir mensagem detalhada do erro
       const errorMessage = error.response?.data?.message || 'Erro desconhecido';
       alert(`❌ Erro ao salvar cliente:\n\n${errorMessage}\n\nVerifique o console para mais detalhes.`);
+    } finally {
+      setIsSubmitting(false); // ✅ v2.63.2: Sempre reabilitar botão
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
+  return createPortal(
+    <div className="fixed inset-0 z-[200] flex items-end md:items-center md:justify-center bg-black/60 backdrop-blur-sm animate-in fade-in">
       <div
-        className={`${isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200 shadow-2xl'} border w-full max-w-lg rounded-2xl overflow-hidden shadow-2xl`}
+        className={`${isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200 shadow-2xl'} border w-full max-w-full md:max-w-lg h-[calc(100%-1rem)] md:h-auto md:max-h-[90vh] rounded-t-2xl md:rounded-2xl overflow-hidden shadow-2xl flex flex-col`}
       >
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
           {/* ✅ v2.45.2: Header com indicador de etapas */}
           <div
-            className={`p-6 border-b ${isDark ? 'border-zinc-800' : 'border-zinc-200'}`}
+            className={`p-4 md:p-6 border-b shrink-0 ${isDark ? 'border-zinc-800' : 'border-zinc-200'}`}
           >
             <div className="flex justify-between items-center mb-4">
               <h2
@@ -396,18 +416,18 @@ const ClientFormModal: React.FC<{
           </div>
 
           {/* ✅ v2.45.2: Conteúdo por etapa */}
-          <div className="p-6 space-y-4">
+          <div className="p-4 md:p-6 space-y-4 flex-1 overflow-y-auto overscroll-contain">
             {/* ETAPA 1: Dados do Cliente (CREATE) ou Todos os campos (EDIT) */}
             {(currentStep === 1 || !!client) && (
-              <div className="grid grid-cols-2 gap-4">
-                <div className="col-span-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="col-span-1 sm:col-span-2">
                   <label className="block text-xs font-bold text-zinc-500 uppercase mb-1">
                     Nome da Empresa
                   </label>
                 <input
                   type="text"
                   required
-                  className={`w-full rounded-lg px-3 py-2 text-sm border focus:ring-1 focus:ring-nexus-orange outline-none ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-zinc-300'}`}
+                  className={`w-full rounded-lg px-3 py-3 md:py-2 text-base md:text-sm border focus:ring-1 focus:ring-nexus-orange outline-none ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-zinc-300'}`}
                   value={formData.company || ''}
                   onChange={(e) =>
                     setFormData({ ...formData, company: e.target.value })
@@ -422,7 +442,7 @@ const ClientFormModal: React.FC<{
                 <input
                   type="text"
                   required
-                  className={`w-full rounded-lg px-3 py-2 text-sm border focus:ring-1 focus:ring-nexus-orange outline-none ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-zinc-300'}`}
+                  className={`w-full rounded-lg px-3 py-3 md:py-2 text-base md:text-sm border focus:ring-1 focus:ring-nexus-orange outline-none ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-zinc-300'}`}
                   value={formData.contactName || ''}
                   onChange={(e) =>
                     setFormData({
@@ -441,7 +461,7 @@ const ClientFormModal: React.FC<{
                 <input
                   type="email"
                   required
-                  className={`w-full rounded-lg px-3 py-2 text-sm border focus:ring-1 focus:ring-nexus-orange outline-none ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-zinc-300'}`}
+                  className={`w-full rounded-lg px-3 py-3 md:py-2 text-base md:text-sm border focus:ring-1 focus:ring-nexus-orange outline-none ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-zinc-300'}`}
                   value={formData.email || ''}
                   onChange={(e) =>
                     setFormData({ ...formData, email: e.target.value })
@@ -458,7 +478,7 @@ const ClientFormModal: React.FC<{
                 <input
                   type="tel"
                   required
-                  className={`w-full rounded-lg px-3 py-2 text-sm border focus:ring-1 focus:ring-nexus-orange outline-none ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-zinc-300'}`}
+                  className={`w-full rounded-lg px-3 py-3 md:py-2 text-base md:text-sm border focus:ring-1 focus:ring-nexus-orange outline-none ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-zinc-300'}`}
                   value={formData.phone || ''}
                   onChange={(e) => {
                     const formatted = formatPhone(e.target.value);
@@ -478,7 +498,7 @@ const ClientFormModal: React.FC<{
                 <input
                   type="text"
                   required
-                  className={`w-full rounded-lg px-3 py-2 text-sm border focus:ring-1 focus:ring-nexus-orange outline-none ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-zinc-300'}`}
+                  className={`w-full rounded-lg px-3 py-3 md:py-2 text-base md:text-sm border focus:ring-1 focus:ring-nexus-orange outline-none ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-zinc-300'}`}
                   value={formData.cpfCnpj || ''}
                   onChange={(e) => {
                     const formatted = formatCnpj(e.target.value);
@@ -496,7 +516,7 @@ const ClientFormModal: React.FC<{
                   Cargo (Opcional)
                 </label>
                 <select
-                  className={`w-full rounded-lg px-3 py-2 text-sm border focus:ring-1 focus:ring-nexus-orange outline-none ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-zinc-300'}`}
+                  className={`w-full rounded-lg px-3 py-3 md:py-2 text-base md:text-sm border focus:ring-1 focus:ring-nexus-orange outline-none ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-zinc-300'}`}
                   value={formData.role || ROLES[0]}
                   onChange={(e) =>
                     setFormData({ ...formData, role: e.target.value })
@@ -520,7 +540,7 @@ const ClientFormModal: React.FC<{
                   <input
                     type="number"
                     min="1"
-                    className={`w-full rounded-lg px-3 py-2 text-sm border focus:ring-1 focus:ring-nexus-orange outline-none ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-zinc-300'}`}
+                    className={`w-full rounded-lg px-3 py-3 md:py-2 text-base md:text-sm border focus:ring-1 focus:ring-nexus-orange outline-none ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-zinc-300'}`}
                     value={formData.numberOfUsers || 1}
                     onChange={(e) =>
                       setFormData({
@@ -538,8 +558,8 @@ const ClientFormModal: React.FC<{
                   Dia de Vencimento *
                 </label>
                 <select
-                  className={`w-full rounded-lg px-3 py-2 text-sm border focus:ring-1 focus:ring-nexus-orange outline-none ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-zinc-300'}`}
-                  value={formData.billingAnchorDay || new Date().getDate()}
+                  className={`w-full rounded-lg px-3 py-3 md:py-2 text-base md:text-sm border focus:ring-1 focus:ring-nexus-orange outline-none ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-zinc-300'}`}
+                  value={formData.billingAnchorDay || Math.min(new Date().getDate(), 28)}
                   onChange={(e) =>
                     setFormData({
                       ...formData,
@@ -566,7 +586,7 @@ const ClientFormModal: React.FC<{
                   </label>
                   <input
                     type="date"
-                    className={`w-full rounded-lg px-3 py-2 text-sm border focus:ring-1 focus:ring-nexus-orange outline-none ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-zinc-300'}`}
+                    className={`w-full rounded-lg px-3 py-3 md:py-2 text-base md:text-sm border focus:ring-1 focus:ring-nexus-orange outline-none ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-zinc-300'}`}
                     value={formData.closedAt || new Date().toISOString().split('T')[0]}
                     onChange={(e) =>
                       setFormData({
@@ -582,15 +602,15 @@ const ClientFormModal: React.FC<{
 
             {/* ETAPA 2: Dados do Plano (CREATE only) ou Todos os campos (EDIT) */}
             {(currentStep === 2 || !!client) && (
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {/* Planos e Ciclo de Cobrança */}
-                <div className="col-span-2">
+                <div className="col-span-1 sm:col-span-2">
                   <label className="block text-xs font-bold text-zinc-500 uppercase mb-1">
                     Plano
                   </label>
                 <select
                   required
-                  className={`w-full rounded-lg px-3 py-2 text-sm border focus:ring-1 focus:ring-nexus-orange outline-none ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-zinc-300'}`}
+                  className={`w-full rounded-lg px-3 py-3 md:py-2 text-base md:text-sm border focus:ring-1 focus:ring-nexus-orange outline-none ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-zinc-300'}`}
                   value={formData.planId || ''}
                   onChange={(e) =>
                     setFormData({ ...formData, planId: e.target.value })
@@ -610,7 +630,7 @@ const ClientFormModal: React.FC<{
 
               {/* Radio Buttons de Billing Cycle */}
               {formData.planId && selectedPlan && (
-                <div className="col-span-2 space-y-2">
+                <div className="col-span-1 sm:col-span-2 space-y-2">
                   <label className="block text-xs font-bold text-zinc-500 uppercase mb-1">
                     Ciclo de Cobrança
                   </label>
@@ -707,7 +727,7 @@ const ClientFormModal: React.FC<{
 
               {/* MRR Calculado (Read-only) */}
               {formData.planId && selectedPlan && (
-                <div className="col-span-2">
+                <div className="col-span-1 sm:col-span-2">
                   <label className="block text-xs font-bold text-zinc-500 uppercase mb-1">
                     MRR (Receita Mensal Recorrente)
                   </label>
@@ -724,7 +744,7 @@ const ClientFormModal: React.FC<{
                   Status
                 </label>
                 <select
-                  className={`w-full rounded-lg px-3 py-2 text-sm border focus:ring-1 focus:ring-nexus-orange outline-none ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-zinc-300'}`}
+                  className={`w-full rounded-lg px-3 py-3 md:py-2 text-base md:text-sm border focus:ring-1 focus:ring-nexus-orange outline-none ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-zinc-300'}`}
                   value={formData.status}
                   onChange={(e) =>
                     setFormData({
@@ -741,12 +761,13 @@ const ClientFormModal: React.FC<{
                   <option value={ClientStatus.EM_TRIAL}>Em Trial</option>
                 </select>
               </div>
+
               </div>
             )}
           </div>
 
           <div
-            className={`p-6 border-t flex gap-3 ${isDark ? 'bg-zinc-950 border-zinc-800' : 'bg-zinc-50 border-zinc-200'}`}
+            className={`p-4 md:p-6 border-t flex flex-col-reverse md:flex-row gap-2 md:gap-3 shrink-0 ${isDark ? 'bg-zinc-950 border-zinc-800' : 'bg-zinc-50 border-zinc-200'}`}
           >
             {/* ✅ v2.45.2: Botões condicionais por etapa */}
             {!client ? (
@@ -756,14 +777,14 @@ const ClientFormModal: React.FC<{
                   <button
                     type="button"
                     onClick={onClose}
-                    className="flex-1 py-2 text-zinc-500 text-sm font-bold hover:text-zinc-900 transition-colors"
+                    className="w-full md:flex-1 py-2.5 md:py-2 text-zinc-500 text-sm font-bold hover:text-zinc-900 transition-colors"
                   >
                     Cancelar
                   </button>
                   <button
                     type="button"
                     onClick={handleNext}
-                    className="flex-1 py-2 bg-nexus-orange text-white rounded-lg text-sm font-bold hover:bg-nexus-orangeDark transition-all shadow-lg shadow-nexus-orange/20"
+                    className="w-full md:flex-1 py-2.5 md:py-2 bg-nexus-orange text-white rounded-lg text-sm font-bold hover:bg-nexus-orangeDark transition-all shadow-lg shadow-nexus-orange/20"
                   >
                     Próximo →
                   </button>
@@ -774,15 +795,16 @@ const ClientFormModal: React.FC<{
                   <button
                     type="button"
                     onClick={handleBack}
-                    className="flex-1 py-2 text-zinc-500 text-sm font-bold hover:text-zinc-900 transition-colors"
+                    className="w-full md:flex-1 py-2.5 md:py-2 text-zinc-500 text-sm font-bold hover:text-zinc-900 transition-colors"
                   >
                     ← Voltar
                   </button>
                   <button
                     type="submit"
-                    className="flex-1 py-2 bg-nexus-orange text-white rounded-lg text-sm font-bold hover:bg-nexus-orangeDark transition-all shadow-lg shadow-nexus-orange/20"
+                    disabled={isSubmitting}
+                    className="w-full md:flex-1 py-2.5 md:py-2 bg-nexus-orange text-white rounded-lg text-sm font-bold hover:bg-nexus-orangeDark transition-all shadow-lg shadow-nexus-orange/20 disabled:opacity-60 disabled:cursor-not-allowed"
                   >
-                    Salvar
+                    {isSubmitting ? 'Salvando...' : 'Salvar'}
                   </button>
                 </>
               )
@@ -792,22 +814,24 @@ const ClientFormModal: React.FC<{
                 <button
                   type="button"
                   onClick={onClose}
-                  className="flex-1 py-2 text-zinc-500 text-sm font-bold hover:text-zinc-900 transition-colors"
+                  className="w-full md:flex-1 py-2.5 md:py-2 text-zinc-500 text-sm font-bold hover:text-zinc-900 transition-colors"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2 bg-nexus-orange text-white rounded-lg text-sm font-bold hover:bg-nexus-orangeDark transition-all shadow-lg shadow-nexus-orange/20"
+                  disabled={isSubmitting}
+                  className="w-full md:flex-1 py-2.5 md:py-2 bg-nexus-orange text-white rounded-lg text-sm font-bold hover:bg-nexus-orangeDark transition-all shadow-lg shadow-nexus-orange/20 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  Salvar
+                  {isSubmitting ? 'Salvando...' : 'Salvar'}
                 </button>
               </>
             )}
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 
@@ -820,10 +844,10 @@ const ImpersonateModal: React.FC<{
   const [reason, setReason] = useState('Suporte técnico');
   const [customReason, setCustomReason] = useState('');
 
-  return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-300">
+  return createPortal(
+    <div className="fixed inset-0 z-[200] flex items-end md:items-center md:justify-center bg-black/80 backdrop-blur-md animate-in fade-in duration-300">
       <div
-        className={`${isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200 shadow-2xl'} border w-full max-w-md rounded-2xl overflow-hidden shadow-2xl animate-in zoom-in-95`}
+        className={`${isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200 shadow-2xl'} border w-full max-w-full md:max-w-md max-h-[calc(100%-1rem)] md:max-h-[90vh] rounded-t-2xl md:rounded-2xl overflow-hidden shadow-2xl animate-in slide-in-from-bottom-4 md:zoom-in-95`}
       >
         <div
           className={`p-6 border-b ${isDark ? 'border-zinc-800' : 'border-zinc-200'} flex justify-between items-center bg-indigo-600/10`}
@@ -875,7 +899,7 @@ const ImpersonateModal: React.FC<{
                 Motivo do Acesso
               </label>
               <select
-                className={`w-full rounded-lg px-3 py-2 text-sm border outline-none focus:ring-1 focus:ring-indigo-500 transition-all ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-zinc-300'}`}
+                className={`w-full rounded-lg px-3 py-3 md:py-2 text-base md:text-sm border outline-none focus:ring-1 focus:ring-indigo-500 transition-all ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-zinc-300'}`}
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
               >
@@ -888,7 +912,7 @@ const ImpersonateModal: React.FC<{
               {reason === 'Outro' && (
                 <textarea
                   placeholder="Especifique o motivo detalhadamente..."
-                  className={`mt-2 w-full rounded-lg px-3 py-2 text-sm border h-20 outline-none focus:ring-1 focus:ring-indigo-500 transition-all resize-none ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-zinc-300'}`}
+                  className={`mt-2 w-full rounded-lg px-3 py-2 text-sm border h-24 md:h-20 outline-none focus:ring-1 focus:ring-indigo-500 transition-all resize-none ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-zinc-300'}`}
                   value={customReason}
                   onChange={(e) => setCustomReason(e.target.value)}
                 />
@@ -898,24 +922,25 @@ const ImpersonateModal: React.FC<{
         </div>
 
         <div
-          className={`p-6 border-t flex gap-3 ${isDark ? 'bg-zinc-950 border-zinc-800' : 'bg-zinc-50 border-zinc-200'}`}
+          className={`p-4 md:p-6 border-t flex flex-col-reverse md:flex-row gap-2 md:gap-3 ${isDark ? 'bg-zinc-950 border-zinc-800' : 'bg-zinc-50 border-zinc-200'}`}
         >
           <button
             onClick={onClose}
-            className="flex-1 py-2.5 text-zinc-500 text-sm font-bold hover:text-zinc-900 transition-colors"
+            className="w-full md:flex-1 py-2.5 text-zinc-500 text-sm font-bold hover:text-zinc-900 transition-colors"
           >
             Cancelar
           </button>
           <button
             onClick={() => onConfirm(reason === 'Outro' ? customReason : reason)}
             disabled={reason === 'Outro' && !customReason}
-            className="flex-1 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-600/20 disabled:opacity-50"
+            className="w-full md:flex-1 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-600/20 disabled:opacity-50"
           >
             Confirmar e Acessar
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 
@@ -925,11 +950,17 @@ const ClientDetailModal: React.FC<{
   onClose: () => void;
   onEdit: () => void;
   onDelete: () => void;
-  onImpersonate: (cName: string, tId: string) => void;
+  onImpersonate: (clientId: string, reason: string) => void;
   role: UserRole;
 }> = ({ client, isDark, onClose, onEdit, onDelete, onImpersonate, role }) => {
   const [activeTab, setActiveTab] = useState('geral');
+  const [tabDropdownOpen, setTabDropdownOpen] = useState(false);
   const [isImpersonateOpen, setIsImpersonateOpen] = useState(false);
+
+  const { data: impersonateLogs = [] } = useClientImpersonateLogs(
+    activeTab === 'tenant' ? client.id : undefined,
+  );
+  const endImpersonateMutation = useEndImpersonate();
 
   const canSeeFinancial =
     role === UserRole.SUPERADMIN || role === UserRole.ADMINISTRATIVO;
@@ -938,56 +969,55 @@ const ClientDetailModal: React.FC<{
     role === UserRole.DESENVOLVEDOR ||
     role === UserRole.GESTOR;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-end md:items-center md:justify-center">
       <div
         className="absolute inset-0 bg-black/60 backdrop-blur-sm"
         onClick={onClose}
       ></div>
 
       <div
-        className={`${isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200 shadow-2xl'} border w-full max-w-5xl max-h-[90vh] rounded-2xl overflow-hidden relative z-10 flex flex-col animate-in slide-in-from-bottom-4 duration-300`}
+        className={`${isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200 shadow-2xl'} border w-full max-w-full h-[75vh] md:h-auto md:max-w-5xl md:max-h-[90vh] rounded-t-2xl md:rounded-2xl overflow-hidden relative z-10 flex flex-col animate-in slide-in-from-bottom-4 duration-300`}
       >
         {/* Header */}
         <div
-          className={`p-6 border-b ${isDark ? 'border-zinc-800' : 'border-zinc-200'} flex items-center justify-between`}
+          className={`p-4 md:p-6 border-b ${isDark ? 'border-zinc-800' : 'border-zinc-200'} flex items-center justify-between`}
         >
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 md:gap-4 min-w-0 flex-1">
             <button
               onClick={onClose}
-              className={`p-2 rounded-lg text-zinc-400 ${isDark ? 'hover:bg-zinc-800' : 'hover:bg-zinc-100'}`}
+              className={`shrink-0 p-2 rounded-lg text-zinc-400 ${isDark ? 'hover:bg-zinc-800' : 'hover:bg-zinc-100'}`}
             >
               <ArrowLeft size={20} />
             </button>
-            <div>
+            <div className="min-w-0">
               <h2
-                className={`text-xl font-bold ${isDark ? 'text-white' : 'text-zinc-900'}`}
+                className={`text-base md:text-xl font-bold truncate ${isDark ? 'text-white' : 'text-zinc-900'}`}
               >
                 {client.company}
               </h2>
-              <div className="flex items-center gap-2 mt-1">
+              <div className="flex items-center gap-2 mt-0.5">
                 <StatusBadge status={client.status} />
-                <span className="text-xs text-zinc-500 font-mono">
+                <span className="hidden md:inline text-xs text-zinc-500 font-mono">
                   {client.tenant?.id}
                 </span>
               </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 md:gap-3 shrink-0">
             {canImpersonate && (
-              <button
-                onClick={() => setIsImpersonateOpen(true)}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-bold flex items-center gap-2 transition-all shadow-lg shadow-indigo-600/20"
-              >
-                <UserRoundSearch size={18} /> Impersonate
-              </button>
+              <>
+                <button onClick={() => setIsImpersonateOpen(true)} className="md:hidden p-2 bg-indigo-600 text-white rounded-xl"><UserRoundSearch size={18} /></button>
+                <button onClick={() => setIsImpersonateOpen(true)} className="hidden md:flex px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-bold items-center gap-2 transition-all shadow-lg shadow-indigo-600/20"><UserRoundSearch size={18} /> Impersonate</button>
+              </>
             )}
             <button
               onClick={onEdit}
-              className="px-4 py-2 bg-nexus-orange text-white rounded-lg text-sm font-bold hover:bg-nexus-orangeDark transition-colors shadow-lg shadow-nexus-orange/20"
+              className="p-2 md:px-4 md:py-2 bg-nexus-orange text-white rounded-xl md:rounded-lg text-sm font-bold hover:bg-nexus-orangeDark transition-colors shadow-lg shadow-nexus-orange/20"
             >
-              Editar Ficha
+              <Edit2 size={18} className="md:hidden" />
+              <span className="hidden md:inline">Editar Ficha</span>
             </button>
             <button
               onClick={() => {
@@ -1000,9 +1030,64 @@ const ClientDetailModal: React.FC<{
           </div>
         </div>
 
-        {/* Tabs */}
+        {/* Mobile: Tab dropdown */}
+        <div className={`md:hidden px-4 py-3 border-b ${isDark ? 'border-zinc-800' : 'border-zinc-200'}`}>
+          <div className="relative">
+            <button
+              onClick={() => setTabDropdownOpen(!tabDropdownOpen)}
+              className={`w-full flex items-center justify-between gap-2 px-4 py-3 rounded-xl border text-sm font-medium transition-all ${
+                isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-zinc-50 border-zinc-200 text-zinc-900'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                {(() => {
+                  const tabs = [
+                    { id: 'geral', label: 'Dados Gerais', icon: Info },
+                    { id: 'contrato', label: 'Contrato', icon: Calendar },
+                    { id: 'financeiro', label: 'Financeiro', icon: CreditCard },
+                    { id: 'tenant', label: 'Tenant & Acesso', icon: Database },
+                    { id: 'interacoes', label: 'Interações', icon: History },
+                    { id: 'modulos', label: 'Módulos', icon: LayoutGrid },
+                  ];
+                  const current = tabs.find(t => t.id === activeTab);
+                  if (!current) return null;
+                  const Icon = current.icon;
+                  return <><Icon size={16} className="text-nexus-orange" /> {current.label}</>;
+                })()}
+              </div>
+              <ChevronDown size={16} className={`transition-transform ${tabDropdownOpen ? 'rotate-180' : ''} text-zinc-400`} />
+            </button>
+            {tabDropdownOpen && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setTabDropdownOpen(false)} />
+                <div className={`absolute left-0 right-0 top-[calc(100%+4px)] z-20 rounded-xl border shadow-xl overflow-hidden ${isDark ? 'bg-zinc-900 border-zinc-700' : 'bg-white border-zinc-200'}`}>
+                  {[
+                    { id: 'geral', label: 'Dados Gerais', icon: Info, show: true },
+                    { id: 'contrato', label: 'Contrato', icon: Calendar, show: true },
+                    { id: 'financeiro', label: 'Financeiro', icon: CreditCard, show: canSeeFinancial },
+                    { id: 'tenant', label: 'Tenant & Acesso', icon: Database, show: true },
+                    { id: 'interacoes', label: 'Interações', icon: History, show: true },
+                    { id: 'modulos', label: 'Módulos', icon: LayoutGrid, show: true },
+                  ].filter(t => t.show && t.id !== activeTab).map(tab => (
+                    <button
+                      key={tab.id}
+                      onClick={() => { setActiveTab(tab.id); setTabDropdownOpen(false); }}
+                      className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium transition-colors ${
+                        isDark ? 'text-zinc-300 hover:bg-zinc-800' : 'text-zinc-600 hover:bg-zinc-50'
+                      }`}
+                    >
+                      <tab.icon size={16} className="text-zinc-400" /> {tab.label}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Tabs (desktop only) */}
         <div
-          className={`flex px-6 border-b overflow-x-auto ${isDark ? 'border-zinc-800 bg-zinc-900/50' : 'border-zinc-200 bg-zinc-50'}`}
+          className={`hidden md:flex px-6 border-b overflow-x-auto no-scrollbar ${isDark ? 'border-zinc-800 bg-zinc-900/50' : 'border-zinc-200 bg-zinc-50'}`}
         >
           {[
             { id: 'geral', label: 'Dados Gerais', icon: Info, show: true },
@@ -1025,6 +1110,12 @@ const ClientDetailModal: React.FC<{
               icon: History,
               show: true,
             },
+            {
+              id: 'modulos',
+              label: 'Módulos',
+              icon: LayoutGrid,
+              show: true,
+            },
           ]
             .filter((t) => t.show)
             .map((tab) => (
@@ -1037,13 +1128,13 @@ const ClientDetailModal: React.FC<{
                     : 'border-transparent text-zinc-400 hover:text-zinc-200'
                 }`}
               >
-                <tab.icon size={16} /> {tab.label}
+                <tab.icon size={16} /> <span className="hidden sm:inline">{tab.label}</span>
               </button>
             ))}
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-8">
+        <div className="flex-1 overflow-y-auto p-4 md:p-8">
           {activeTab === 'tenant' && client.tenant && (
             <div className="space-y-8 animate-in fade-in duration-300">
               {/* 3 Cards Grid */}
@@ -1198,46 +1289,87 @@ const ClientDetailModal: React.FC<{
                 <div
                   className={`border rounded-xl overflow-hidden ${isDark ? 'border-zinc-800' : 'border-zinc-200'}`}
                 >
-                  <table className="w-full text-left">
-                    <thead
-                      className={`text-[9px] font-bold uppercase text-zinc-500 ${isDark ? 'bg-zinc-900/50' : 'bg-zinc-50'}`}
-                    >
-                      <tr>
-                        <th className="px-4 py-2">Data/Hora</th>
-                        <th className="px-4 py-2">Usuário</th>
-                        <th className="px-4 py-2">Motivo</th>
-                      </tr>
-                    </thead>
-                    <tbody
-                      className={`divide-y text-xs ${isDark ? 'divide-zinc-800' : 'divide-zinc-100'}`}
-                    >
-                      <tr>
-                        <td className="px-4 py-2">12/12/2023 14:00</td>
-                        <td className="px-4 py-2 font-bold text-nexus-orange">
-                          Alex Silva
-                        </td>
-                        <td className="px-4 py-2 italic">
-                          Suporte ao faturamento
-                        </td>
-                      </tr>
-                      <tr>
-                        <td className="px-4 py-2">05/12/2023 09:30</td>
-                        <td className="px-4 py-2 font-bold text-nexus-orange">
-                          Ricardo Dev
-                        </td>
-                        <td className="px-4 py-2 italic">
-                          Investigação de Bug v2.4
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
+                  {impersonateLogs.length === 0 ? (
+                    <p className="px-4 py-4 text-center text-zinc-500 italic text-xs">Nenhum acesso registrado</p>
+                  ) : (
+                    <>
+                      {/* Mobile: card view */}
+                      <div className={`md:hidden divide-y ${isDark ? 'divide-zinc-800' : 'divide-zinc-100'}`}>
+                        {impersonateLogs.map((log: ImpersonateLog) => (
+                          <div key={log.id} className="px-4 py-3 space-y-1">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-bold text-nexus-orange">{log.user?.name || log.userId}</span>
+                              {log.endedAt ? (
+                                <span className="text-[10px] text-zinc-500">Encerrada</span>
+                              ) : (
+                                <button
+                                  onClick={() => endImpersonateMutation.mutate({ clientId: client.id, logId: log.id })}
+                                  disabled={endImpersonateMutation.isPending}
+                                  className="text-[10px] text-red-400 hover:text-red-300 font-bold transition-colors disabled:opacity-50"
+                                >
+                                  Encerrar
+                                </button>
+                              )}
+                            </div>
+                            <p className="text-[10px] text-zinc-500">{new Date(log.startedAt).toLocaleString('pt-BR')} · {log.reason}</p>
+                          </div>
+                        ))}
+                      </div>
+                      {/* Desktop: table view */}
+                      <table className="hidden md:table w-full text-left">
+                        <thead
+                          className={`text-[9px] font-bold uppercase text-zinc-500 ${isDark ? 'bg-zinc-900/50' : 'bg-zinc-50'}`}
+                        >
+                          <tr>
+                            <th className="px-4 py-2">Data/Hora</th>
+                            <th className="px-4 py-2">Usuário</th>
+                            <th className="px-4 py-2">Motivo</th>
+                            <th className="px-4 py-2">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody
+                          className={`divide-y text-xs ${isDark ? 'divide-zinc-800' : 'divide-zinc-100'}`}
+                        >
+                          {impersonateLogs.map((log: ImpersonateLog) => (
+                            <tr key={log.id}>
+                              <td className="px-4 py-2">
+                                {new Date(log.startedAt).toLocaleString('pt-BR')}
+                              </td>
+                              <td className="px-4 py-2 font-bold text-nexus-orange">
+                                {log.user?.name || log.userId}
+                              </td>
+                              <td className="px-4 py-2 italic">{log.reason}</td>
+                              <td className="px-4 py-2">
+                                {log.endedAt ? (
+                                  <span className="text-zinc-500">Encerrada</span>
+                                ) : (
+                                  <button
+                                    onClick={() =>
+                                      endImpersonateMutation.mutate({
+                                        clientId: client.id,
+                                        logId: log.id,
+                                      })
+                                    }
+                                    disabled={endImpersonateMutation.isPending}
+                                    className="text-xs text-red-400 hover:text-red-300 font-bold transition-colors disabled:opacity-50"
+                                  >
+                                    Encerrar
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
           )}
 
           {activeTab === 'geral' && (
-            <div className="grid grid-cols-2 gap-8 animate-in fade-in duration-300">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-8 animate-in fade-in duration-300">
               <section className="space-y-6">
                 <div>
                   <h3 className="text-zinc-500 text-xs font-bold uppercase mb-4 tracking-wider">
@@ -1322,7 +1454,13 @@ const ClientDetailModal: React.FC<{
             </div>
           )}
 
-          {!['tenant', 'geral'].includes(activeTab) && (
+          {activeTab === 'modulos' && (
+            <div className="animate-in fade-in duration-300">
+              <ClientModulesTab clientId={client.id} onBack={() => setActiveTab('geral')} />
+            </div>
+          )}
+
+          {!['tenant', 'geral', 'modulos'].includes(activeTab) && (
             <div className="flex items-center justify-center h-48 text-zinc-500 italic">
               Carregando dados de {activeTab}...
             </div>
@@ -1335,24 +1473,22 @@ const ClientDetailModal: React.FC<{
           client={client}
           isDark={isDark}
           onClose={() => setIsImpersonateOpen(false)}
-          onConfirm={(_reason) => {
+          onConfirm={(reason) => {
             setIsImpersonateOpen(false);
-            onImpersonate(client.company || 'Cliente', client.tenant?.id || '');
-            onClose();
+            onImpersonate(client.id, reason);
           }}
         />
       )}
-    </div>
+    </div>,
+    document.body
   );
 };
 
 export const ClientsList: React.FC<{
   product: ProductType;
-  onImpersonate?: (cName: string, tId: string) => void;
   role?: UserRole;
 }> = ({
   product,
-  onImpersonate = () => {},
   role = UserRole.SUPERADMIN,
 }) => {
   const { theme } = useUIStore();
@@ -1376,7 +1512,7 @@ export const ClientsList: React.FC<{
     status: c.status,
     planId: c.planId,
     billingCycle: c.billingCycle || BillingCycle.MONTHLY, // ✅ v2.42.0: Mapear billing cycle do backend
-    billingAnchorDay: c.subscriptions?.[0]?.billingAnchorDay || new Date().getDate(), // ✅ v2.46.0: Ler da Subscription ativa
+    billingAnchorDay: c.subscriptions?.[0]?.billingAnchorDay || Math.min(new Date().getDate(), 28), // ✅ v2.46.0: Ler da Subscription ativa
     subscriptions: c.subscriptions, // ✅ v2.46.1: Incluir subscriptions do backend para modal de edição
     vendedorId: c.vendedorId,
     leadId: c.leadId,
@@ -1414,10 +1550,40 @@ export const ClientsList: React.FC<{
   // v2.44.0: Query client para invalidação de cache bidirecional
   const queryClient = useQueryClient();
 
+  const startImpersonateMutation = useStartImpersonate();
+
+  const handleImpersonateClient = async (clientId: string, reason: string) => {
+    try {
+      const result = await startImpersonateMutation.mutateAsync({ clientId, reason });
+      window.open(result.magicLink, '_blank');
+      toast.success('Sessão de impersonate iniciada');
+      queryClient.invalidateQueries({ queryKey: ['impersonate-logs', clientId] });
+    } catch {
+      toast.error('Erro ao iniciar impersonate. Verifique a integração One Nexus.');
+    }
+  };
+
   // Buscar plans do backend para o modal de reativação
   const { data: plansData = [] } = useApiQuery<any[]>(['plans'], '/plans');
 
-  const filteredClients = clients;
+  const [searchParamsClients, setSearchParamsClients] = useSearchParams();
+  const [clientSearchQuery, setClientSearchQuery] = useState(() => searchParamsClients.get('search') || '');
+
+  // Limpar ?search= da URL após preencher o campo
+  useEffect(() => {
+    if (searchParamsClients.has('search')) {
+      setSearchParamsClients({}, { replace: true });
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const filteredClients = clientSearchQuery
+    ? clients.filter(c =>
+        c.company.toLowerCase().includes(clientSearchQuery.toLowerCase()) ||
+        c.contactName.toLowerCase().includes(clientSearchQuery.toLowerCase()) ||
+        (c.cpfCnpj && c.cpfCnpj.includes(clientSearchQuery)) ||
+        (c.tenant?.id && c.tenant.id.toLowerCase().includes(clientSearchQuery.toLowerCase()))
+      )
+    : clients;
 
   const handleSave = (_client: ClientExtended) => {
     setIsFormOpen(false);
@@ -1465,23 +1631,28 @@ export const ClientsList: React.FC<{
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       {/* Header */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h1
-            className={`text-3xl font-bold ${isDark ? 'text-white' : 'text-zinc-900'}`}
-          >
-            Clientes {productLabel}
-          </h1>
-          <p className="text-zinc-500">
-            Gerencie todos os assinantes ativos e inativos de {productLabel}.
-          </p>
+      <div className="flex flex-col gap-3 md:flex-row md:justify-between md:items-center">
+        <div className="flex items-center gap-3">
+          <div className={`p-2.5 rounded-xl ${isDark ? 'bg-zinc-800' : 'bg-zinc-100'}`}>
+            <Users size={20} className="text-nexus-orange" />
+          </div>
+          <div>
+            <h1
+              className={`text-xl md:text-3xl font-bold ${isDark ? 'text-white' : 'text-zinc-900'}`}
+            >
+              Clientes {productLabel}
+            </h1>
+            <p className="text-xs md:text-sm text-zinc-500">
+              Assinantes ativos e inativos
+            </p>
+          </div>
         </div>
         <button
           onClick={() => {
             setEditClient(null);
             setIsFormOpen(true);
           }}
-          className="px-4 py-2.5 bg-nexus-orange hover:bg-nexus-orangeDark text-white rounded-lg text-sm font-bold flex items-center gap-2 transition-all active:scale-95 shadow-lg shadow-nexus-orange/20"
+          className="w-full md:w-auto flex items-center justify-center md:justify-start gap-2 py-3.5 md:py-2.5 px-4 bg-nexus-orange hover:bg-nexus-orangeDark text-white rounded-xl md:rounded-lg text-base md:text-sm font-bold shadow-lg shadow-nexus-orange/20 transition-all active:scale-95"
         >
           <Plus size={20} /> Novo Cliente
         </button>
@@ -1492,24 +1663,26 @@ export const ClientsList: React.FC<{
         className={`${isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200 shadow-sm'} border rounded-2xl overflow-hidden transition-all duration-300`}
       >
         <div
-          className={`p-4 border-b ${isDark ? 'border-zinc-800' : 'border-zinc-200'} flex flex-wrap gap-4 items-center justify-between`}
+          className={`p-4 border-b ${isDark ? 'border-zinc-800' : 'border-zinc-200'} flex flex-col gap-3 md:flex-row md:flex-wrap md:gap-4 md:items-center md:justify-between`}
         >
           <div className="flex items-center gap-4 flex-1">
-            <div className="relative flex-1 max-w-sm">
+            <div className="relative flex-1 w-full md:max-w-sm">
               <Search
                 className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500"
                 size={18}
               />
               <input
                 type="text"
-                placeholder="Pesquisar por clínica, responsável ou tenant ID..."
-                className={`w-full border-none rounded-lg py-2 pl-10 pr-4 text-sm focus:ring-1 focus:ring-nexus-orange transition-all ${isDark ? 'bg-zinc-800 text-white' : 'bg-zinc-100 text-zinc-900'}`}
+                placeholder="Pesquisar cliente..."
+                value={clientSearchQuery}
+                onChange={(e) => setClientSearchQuery(e.target.value)}
+                className={`w-full border-none rounded-lg py-3 md:py-2 pl-10 pr-4 text-base md:text-sm focus:ring-1 focus:ring-nexus-orange outline-none transition-all ${isDark ? 'bg-zinc-800 text-white' : 'bg-zinc-100 text-zinc-900'}`}
               />
             </div>
             <button
               className={`p-2 rounded-lg flex items-center gap-2 text-sm px-4 transition-colors ${isDark ? 'bg-zinc-800 hover:bg-zinc-700 text-zinc-400' : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-600'}`}
             >
-              <Filter size={18} /> Filtros
+              <Filter size={18} /> <span className="hidden md:inline">Filtros</span>
             </button>
           </div>
           <div className="flex items-center gap-2">
@@ -1519,7 +1692,34 @@ export const ClientsList: React.FC<{
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        {/* Mobile Card View */}
+        <div className="md:hidden divide-y divide-zinc-800/50">
+          {filteredClients.map((client) => (
+            <div
+              key={client.id}
+              onClick={() => setSelectedClient(client)}
+              className={`p-4 flex items-center gap-3 active:scale-[0.98] active:bg-zinc-800/30 transition-all cursor-pointer ${isDark ? '' : 'divide-zinc-100'}`}
+            >
+              <div className="flex-1 min-w-0">
+                <p className={`text-sm font-semibold truncate ${isDark ? 'text-zinc-100' : 'text-zinc-900'}`}>
+                  {client.company}
+                </p>
+                <div className="flex items-center gap-2 mt-1">
+                  <StatusBadge status={client.status} />
+                  <span className={`text-xs ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>{client.plan}</span>
+                </div>
+              </div>
+              <div className="text-right shrink-0">
+                <p className={`text-sm font-bold font-mono ${isDark ? 'text-zinc-200' : 'text-zinc-800'}`}>
+                  R$ {(client.mrr || 0).toLocaleString()}
+                </p>
+                <p className="text-[10px] text-zinc-500">MRR</p>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left">
             <thead
               className={`${isDark ? 'bg-zinc-950/30 text-zinc-500' : 'bg-zinc-50 text-zinc-400'} border-b ${isDark ? 'border-zinc-800' : 'border-zinc-200'} text-xs font-bold uppercase tracking-wider`}
@@ -1640,7 +1840,7 @@ export const ClientsList: React.FC<{
             setIsFormOpen(true);
           }}
           onDelete={() => handleDelete(selectedClient.id)}
-          onImpersonate={onImpersonate}
+          onImpersonate={handleImpersonateClient}
         />
       )}
 

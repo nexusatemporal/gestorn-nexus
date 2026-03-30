@@ -6,6 +6,7 @@ import { MessageEvent } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
 import { NotificationType, UserRole, Prisma } from '@prisma/client';
+import { PushService } from './push.service';
 
 /** Tipos que disparam email + Slack além de notificação in-app */
 const EMAIL_TYPES = new Set<NotificationType>([
@@ -23,6 +24,7 @@ export class NotificationsService {
     private readonly prisma: PrismaService,
     private readonly mailService: MailService,
     private readonly config: ConfigService,
+    private readonly pushService: PushService,
   ) {}
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -234,6 +236,18 @@ export class NotificationsService {
       this.sendToSlack(params.title, params.message, params.type).catch(() => {});
     }
 
+    // Push notification nativa (v2.66.0)
+    const pushEnabled = pref ? pref.push : true;
+    if (pushEnabled) {
+      this.pushService.sendPush(params.userId, {
+        title: params.title,
+        body: params.message,
+        icon: '/logos/icon-dark.png',
+        tag: `${params.type}-${params.dedupeKey ?? Date.now()}`,
+        data: { type: params.type, link: params.link },
+      }, params.type).catch(() => {});
+    }
+
     return notification;
   }
 
@@ -312,16 +326,16 @@ export class NotificationsService {
   async getPreferences(userId: string) {
     const existing = await this.prisma.notificationPreference.findMany({
       where: { userId },
-      select: { type: true, inApp: true, email: true },
+      select: { type: true, inApp: true, email: true, push: true },
     });
 
     // Retorna mapa completo para todos os tipos (padrão true/true se sem registro)
-    const result: Record<string, { inApp: boolean; email: boolean }> = {};
+    const result: Record<string, { inApp: boolean; email: boolean; push: boolean }> = {};
     for (const type of Object.values(NotificationType)) {
       const found = existing.find((p) => p.type === type);
       result[type] = found
-        ? { inApp: found.inApp, email: found.email }
-        : { inApp: true, email: true };
+        ? { inApp: found.inApp, email: found.email, push: found.push }
+        : { inApp: true, email: true, push: true };
     }
 
     return result;
@@ -329,14 +343,14 @@ export class NotificationsService {
 
   async updatePreferences(
     userId: string,
-    prefs: Array<{ type: NotificationType; inApp: boolean; email: boolean }>,
+    prefs: Array<{ type: NotificationType; inApp: boolean; email: boolean; push?: boolean }>,
   ) {
     await Promise.all(
       prefs.map((pref) =>
         this.prisma.notificationPreference.upsert({
           where: { userId_type: { userId, type: pref.type } },
-          create: { userId, type: pref.type, inApp: pref.inApp, email: pref.email },
-          update: { inApp: pref.inApp, email: pref.email },
+          create: { userId, type: pref.type, inApp: pref.inApp, email: pref.email, push: pref.push ?? true },
+          update: { inApp: pref.inApp, email: pref.email, push: pref.push ?? true },
         }),
       ),
     );

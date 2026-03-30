@@ -1,4 +1,4 @@
-import { PrismaClient, UserRole, ProductType, ClientStatus, TenantStatus } from '@prisma/client';
+import { PrismaClient, UserRole, ProductType, ClientStatus, TenantStatus, StatusEntity } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
@@ -221,7 +221,17 @@ async function main() {
     },
   });
 
-  console.log(`✅ Created 7 lead origins`);
+  const originChatNexus = await prisma.leadOrigin.upsert({
+    where: { name: 'Chat Nexus' },
+    update: {},
+    create: {
+      name: 'Chat Nexus',
+      description: 'Leads originados do Chat Nexus (WhatsApp/Web)',
+      isActive: true,
+    },
+  });
+
+  console.log(`✅ Created 8 lead origins`);
 
   // ========================================================================
   // FUNNEL STAGES - Etapas do Funil de Vendas
@@ -409,6 +419,51 @@ async function main() {
 
   console.log(`✅ Created 3 tenants`);
 
+  // ========================================================================
+  // STATUS CONFIGS — Labels e cores para todos os status do sistema
+  // ========================================================================
+  console.log('🏷️  Creating status configs...');
+
+  const statusConfigs = [
+    // CLIENT statuses
+    { entity: StatusEntity.CLIENT, slug: 'EM_TRIAL',     label: 'Em Trial',     color: '#3b82f6', bgColor: '#dbeafe', isSystem: true, sortOrder: 0 },
+    { entity: StatusEntity.CLIENT, slug: 'ATIVO',        label: 'Ativo',        color: '#16a34a', bgColor: '#dcfce7', isSystem: true, sortOrder: 1 },
+    { entity: StatusEntity.CLIENT, slug: 'INADIMPLENTE', label: 'Inadimplente', color: '#dc2626', bgColor: '#fee2e2', isSystem: true, sortOrder: 2 },
+    { entity: StatusEntity.CLIENT, slug: 'BLOQUEADO',    label: 'Bloqueado',    color: '#ea580c', bgColor: '#ffedd5', isSystem: true, sortOrder: 3 },
+    { entity: StatusEntity.CLIENT, slug: 'CANCELADO',    label: 'Cancelado',    color: '#6b7280', bgColor: '#f3f4f6', isSystem: true, sortOrder: 4 },
+
+    // LEAD statuses
+    { entity: StatusEntity.LEAD, slug: 'ABERTO',      label: 'Aberto',      color: '#3b82f6', bgColor: '#dbeafe', isSystem: true, sortOrder: 0 },
+    { entity: StatusEntity.LEAD, slug: 'CONTATADO',   label: 'Contatado',   color: '#7c3aed', bgColor: '#ede9fe', isSystem: true, sortOrder: 1 },
+    { entity: StatusEntity.LEAD, slug: 'QUALIFICADO', label: 'Qualificado', color: '#d97706', bgColor: '#fef3c7', isSystem: true, sortOrder: 2 },
+    { entity: StatusEntity.LEAD, slug: 'GANHO',       label: 'Ganho',       color: '#16a34a', bgColor: '#dcfce7', isSystem: true, sortOrder: 3 },
+    { entity: StatusEntity.LEAD, slug: 'PERDIDO',     label: 'Perdido',     color: '#dc2626', bgColor: '#fee2e2', isSystem: true, sortOrder: 4 },
+    { entity: StatusEntity.LEAD, slug: 'DESISTIU',    label: 'Desistiu',    color: '#6b7280', bgColor: '#f3f4f6', isSystem: true, sortOrder: 5 },
+
+    // SUBSCRIPTION statuses
+    { entity: StatusEntity.SUBSCRIPTION, slug: 'ACTIVE',   label: 'Ativa',        color: '#16a34a', bgColor: '#dcfce7', isSystem: true, sortOrder: 0 },
+    { entity: StatusEntity.SUBSCRIPTION, slug: 'TRIALING', label: 'Em Trial',     color: '#3b82f6', bgColor: '#dbeafe', isSystem: true, sortOrder: 1 },
+    { entity: StatusEntity.SUBSCRIPTION, slug: 'PAST_DUE', label: 'Inadimplente', color: '#dc2626', bgColor: '#fee2e2', isSystem: true, sortOrder: 2 },
+    { entity: StatusEntity.SUBSCRIPTION, slug: 'CANCELED', label: 'Cancelada',    color: '#6b7280', bgColor: '#f3f4f6', isSystem: true, sortOrder: 3 },
+    { entity: StatusEntity.SUBSCRIPTION, slug: 'PAUSED',   label: 'Pausada',      color: '#ea580c', bgColor: '#ffedd5', isSystem: true, sortOrder: 4 },
+
+    // TENANT statuses
+    { entity: StatusEntity.TENANT, slug: 'ATIVO',    label: 'Ativo',     color: '#16a34a', bgColor: '#dcfce7', isSystem: true, sortOrder: 0 },
+    { entity: StatusEntity.TENANT, slug: 'SUSPENSO', label: 'Suspenso',  color: '#ea580c', bgColor: '#ffedd5', isSystem: true, sortOrder: 1 },
+    { entity: StatusEntity.TENANT, slug: 'BLOQUEADO',label: 'Bloqueado', color: '#dc2626', bgColor: '#fee2e2', isSystem: true, sortOrder: 2 },
+    { entity: StatusEntity.TENANT, slug: 'DELETADO', label: 'Deletado',  color: '#6b7280', bgColor: '#f3f4f6', isSystem: true, sortOrder: 3 },
+  ];
+
+  for (const config of statusConfigs) {
+    await prisma.statusConfig.upsert({
+      where: { entity_slug: { entity: config.entity, slug: config.slug } },
+      update: { label: config.label, color: config.color, bgColor: config.bgColor },
+      create: config,
+    });
+  }
+
+  console.log(`✅ Created ${statusConfigs.length} status configs`);
+
   console.log('');
   console.log('✅ Seed completed successfully!');
   console.log('');
@@ -419,6 +474,7 @@ async function main() {
   console.log(`   - Funnel Stages: 7`);
   console.log(`   - Clients: 3`);
   console.log(`   - Tenants: 3`);
+  console.log(`   - Status Configs: ${statusConfigs.length}`);
 }
 
 main()

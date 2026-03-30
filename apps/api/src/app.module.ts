@@ -28,6 +28,11 @@ import { FunnelStagesModule } from './modules/funnel-stages/funnel-stages.module
 import { IntegrationsModule } from './modules/integrations/integrations.module';
 import { FinanceModule } from './modules/finance/finance.module';
 import { SubscriptionModule } from './modules/subscriptions/subscriptions.module';
+import { MailModule } from './modules/mail/mail.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
+import { StatusConfigsModule } from './modules/status-configs/status-configs.module';
+import { FormsModule } from './modules/forms/forms.module';
+import { SearchModule } from './modules/search/search.module';
 
 /**
  * App Module - Módulo raiz da aplicação
@@ -85,6 +90,11 @@ import { SubscriptionModule } from './modules/subscriptions/subscriptions.module
     IntegrationsModule,
     FinanceModule,
     SubscriptionModule, // v2.40.0 - Billing Lifecycle
+    MailModule,         // v2.58.0 - SMTP Email (Zoho)
+    NotificationsModule, // v2.58.0 - Notifications API
+    StatusConfigsModule, // v2.60.0 - Status Configs CRUD
+    FormsModule,         // v2.64.0 - Form Builder (captura de leads via LP/campanhas)
+    SearchModule,        // v2.69.0 - Global Search (read-only, header search bar)
   ],
   providers: [
     // ══════════════════════════════════════════════════════════════════════════

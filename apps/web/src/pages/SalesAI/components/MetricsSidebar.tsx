@@ -13,7 +13,7 @@ import {
   Sparkles,
   Lightbulb,
   Calendar as CalendarIcon,
-  ChevronRight,
+  Thermometer,
   Zap,
   Brain,
 } from 'lucide-react';
@@ -54,6 +54,15 @@ const AI_MODELS: AIModel[] = [
   },
 ];
 
+const STAGE_ACTIONS: Record<string, string> = {
+  PROSPECCAO: 'Agendar call de discovery com o lead',
+  QUALIFICACAO: 'Fazer SPIN Questions e validar budget',
+  APRESENTACAO: 'Agendar demo personalizada do produto',
+  NEGOCIACAO: 'Negociar condições e responder objeções',
+  FECHAMENTO: 'Agendar assinatura de contrato',
+  POS_VENDA: 'Check-in de 30 dias com o cliente',
+};
+
 interface MetricsSidebarProps {
   leadContext: LeadContext | null;
   provider?: AIProvider;
@@ -85,7 +94,7 @@ export function MetricsSidebar({ leadContext, provider = 'groq', onProviderChang
   );
 
   return (
-    <aside className={clsx('w-80 border-l p-6 overflow-y-auto h-full space-y-6 hidden xl:block transition-all', isDark ? 'bg-zinc-900/50 border-zinc-800' : 'bg-zinc-50 border-zinc-200', className)}>
+    <aside className={clsx('w-80 border-l p-6 overflow-y-auto space-y-6 hidden xl:flex xl:flex-col transition-all', isDark ? 'bg-zinc-900/50 border-zinc-800' : 'bg-zinc-50 border-zinc-200', className)}>
       {/* Header */}
       <h3 className={clsx('text-xs font-bold uppercase tracking-[0.2em] flex items-center gap-2', isDark ? 'text-zinc-400' : 'text-zinc-600')}>
         <TrendingUp size={16} className="text-orange-500" /> Métricas IA do Lead
@@ -93,21 +102,27 @@ export function MetricsSidebar({ leadContext, provider = 'groq', onProviderChang
 
       {/* Metric Cards */}
       <div className="space-y-4">
+        {(() => {
+          const s = leadContext.leadScore ?? 0;
+          const temp = s >= 80 ? { label: 'QUENTE', color: 'text-green-500 bg-green-500/10' }
+            : s >= 50 ? { label: 'MORNO', color: 'text-yellow-500 bg-yellow-500/10' }
+            : { label: 'FRIO', color: 'text-red-500 bg-red-500/10' };
+          return renderMetricCard(
+            "Temperatura",
+            leadContext.leadScore != null ? temp.label : '---',
+            <Thermometer size={18} />,
+            temp.color
+          );
+        })()}
         {renderMetricCard(
-          "Probabilidade",
-          `${leadContext.leadScore || 88}%`,
-          <CheckCircle2 size={18} />,
-          "text-green-500 bg-green-500/10"
-        )}
-        {renderMetricCard(
-          "Deal Value",
-          "R$ 4.800",
+          "Plano",
+          leadContext.plan || 'Não definido',
           <DollarSign size={18} />,
           "text-indigo-500 bg-indigo-500/10"
         )}
         {renderMetricCard(
           "Lead Score IA",
-          "8.4 / 10",
+          leadContext.leadScore != null ? `${(leadContext.leadScore / 10).toFixed(1)} / 10` : '---',
           <Sparkles size={18} />,
           "text-yellow-500 bg-yellow-500/10"
         )}
@@ -119,43 +134,26 @@ export function MetricsSidebar({ leadContext, provider = 'groq', onProviderChang
           <Lightbulb size={14} className="text-yellow-500" /> Próxima Ação Sugerida
         </h4>
         <p className="text-xs text-zinc-400 leading-relaxed">
-          "Agendar demonstração técnica focada em gestão de unidades."
+          "{STAGE_ACTIONS[leadContext.stage] || 'Qualificar o lead e identificar necessidades'}"
         </p>
-        <div className="flex gap-2">
-          <button
-            className="flex-1 py-2 bg-orange-500/10 text-orange-500 rounded-xl text-[10px] font-bold hover:bg-orange-500/20 transition-all flex items-center justify-center gap-2"
-          >
-            Agendar Agora
-          </button>
-          <button
-            onClick={() => {
-              const eventTitle = `Nexus Reunião: ${leadContext.name} (${leadContext.company || 'Cliente'})`;
-              const googleUrl = `https://calendar.google.com/calendar/u/0/r/eventedit?text=${encodeURIComponent(eventTitle)}&details=${encodeURIComponent('Agendamento via Nexus Sales AI Copilot')}`;
-              window.open(googleUrl, '_blank');
-            }}
-            className="p-2 bg-blue-500/10 text-blue-500 rounded-xl hover:bg-blue-500/20 transition-all"
-            title="Sincronizar Google Calendar"
-          >
-            <CalendarIcon size={14} />
-          </button>
-        </div>
+        <button
+          onClick={() => {
+            const eventTitle = `Nexus Reunião: ${leadContext.name} (${leadContext.company || 'Cliente'})`;
+            const googleUrl = `https://calendar.google.com/calendar/u/0/r/eventedit?text=${encodeURIComponent(eventTitle)}&details=${encodeURIComponent('Agendamento via Nexus Sales AI Copilot')}`;
+            window.open(googleUrl, '_blank');
+          }}
+          className="w-full py-2 bg-orange-500/10 text-orange-500 rounded-xl text-[10px] font-bold hover:bg-orange-500/20 transition-all flex items-center justify-center gap-2"
+        >
+          <CalendarIcon size={12} /> Agendar Agora
+        </button>
       </div>
 
       {/* Histórico de Sugestões */}
       <div className="space-y-3">
         <h4 className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Histórico de Sugestões</h4>
-        {[
-          { t: 'Pitch Personalizado', d: 'Hoje 09:12' },
-          { t: 'Analise de Concorrente', d: 'Ontem 14:45' }
-        ].map((s, i) => (
-          <div key={i} className={clsx('p-3 rounded-xl border flex items-center justify-between', isDark ? 'bg-zinc-950/30 border-zinc-800' : 'bg-zinc-100/50 border-zinc-100')}>
-            <div className="flex flex-col">
-              <span className="text-[11px] font-bold text-zinc-400">{s.t}</span>
-              <span className="text-[9px] text-zinc-600">{s.d}</span>
-            </div>
-            <ChevronRight size={14} className="text-zinc-700" />
-          </div>
-        ))}
+        <div className={clsx('p-4 rounded-xl border text-center', isDark ? 'bg-zinc-950/30 border-zinc-800' : 'bg-zinc-100/50 border-zinc-100')}>
+          <p className="text-[10px] text-zinc-600">Interaja com o chat para gerar histórico de sugestões.</p>
+        </div>
       </div>
 
       {/* Status do Motor IA - Seletor Interativo */}

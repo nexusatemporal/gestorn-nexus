@@ -1,6 +1,7 @@
 import { Outlet } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
+import { BottomNav } from './BottomNav';
 import { useUIStore } from '@/stores/useUIStore';
 import { cn } from '@/utils/cn';
 
@@ -43,15 +44,18 @@ export function AppLayout() {
       {/* ════════════════════════════════════════════════════════════════ */}
       {/* MAIN CONTENT */}
       {/* ════════════════════════════════════════════════════════════════ */}
-      <main className="flex-1 flex flex-col h-full overflow-hidden">
+      <main className="flex-1 flex flex-col h-full min-w-0">
         {/* Header */}
         <Header />
 
         {/* Content Area */}
-        <div className="flex-1 overflow-y-auto p-8 relative">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden p-3 md:p-8 pb-[calc(5rem+env(safe-area-inset-bottom))] md:pb-8 relative">
           <Outlet />
         </div>
       </main>
+
+      {/* Mobile Bottom Navigation */}
+      <BottomNav />
     </div>
   );
 }

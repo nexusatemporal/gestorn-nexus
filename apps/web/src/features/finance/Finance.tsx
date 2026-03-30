@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { BarChart3, Download, AlertTriangle, Sparkles, X, Check, Edit, AlertCircle, Clock } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { BarChart3, Download, FileText, AlertTriangle, Sparkles, X, Check, Edit, AlertCircle, Clock, Plus, ChevronDown, Filter, Trash2 } from 'lucide-react';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, Legend, CartesianGrid, BarChart, Bar, Cell } from 'recharts';
 import { useUIStore } from '@/stores/useUIStore';
 import { useMetrics, useMrrHistory, useArrHistory, useAgingReport, useTransactions, useOverdueClients, useUpcomingDueDates, useCreateTransaction, useUpdateTransaction, useMarkAsPaid, useDeleteTransaction, useClients } from './hooks/useFinance';
@@ -16,7 +17,9 @@ export const Finance: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [selectedClient, setSelectedClient] = useState<{ id: string; name: string } | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; client: string } | null>(null);
   const [productFilter, setProductFilter] = useState<'ALL' | 'ONE_NEXUS' | 'LOCADORAS'>('ALL');
+  const [productDropdownOpen, setProductDropdownOpen] = useState(false);
   const [mrrPeriod, setMrrPeriod] = useState<6 | 12 | 24 | 999>(6);
   const [form, setForm] = useState({
     description: '',
@@ -366,52 +369,77 @@ export const Finance: React.FC = () => {
   ] : [];
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
+    <div className="space-y-4 md:space-y-8 animate-in fade-in duration-500">
       {/* Header */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className={`text-3xl font-bold ${isDark ? 'text-white' : 'text-zinc-900'}`}>Financeiro Consolidado</h1>
-          <p className="text-zinc-500">Controle de receitas, métricas de crescimento e cobranças.</p>
+      <div className="flex flex-col gap-3 md:flex-row md:justify-between md:items-center">
+        <div className="flex items-center gap-3">
+          <div className={`p-2.5 rounded-xl ${isDark ? 'bg-zinc-800' : 'bg-zinc-100'}`}>
+            <BarChart3 size={20} className="text-nexus-orange" />
+          </div>
+          <div>
+            <h1 className={`text-xl md:text-3xl font-bold ${isDark ? 'text-white' : 'text-zinc-900'}`}>Financeiro</h1>
+            <p className="text-xs md:text-sm text-zinc-500">Receitas e cobranças</p>
+          </div>
         </div>
-        <div className="flex gap-3">
-          <select
-            value={productFilter}
-            onChange={(e) => setProductFilter(e.target.value as any)}
-            className={`px-4 py-2 rounded-lg text-sm border ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-zinc-200 text-zinc-700'}`}
-          >
-            <option value="ALL">Todos os Produtos</option>
-            <option value="ONE_NEXUS">One Nexus</option>
-            <option value="LOCADORAS">Locadoras</option>
-          </select>
-          <button onClick={handleExportCSV} className={`px-4 py-2 rounded-lg text-sm flex items-center gap-2 border ${isDark ? 'bg-zinc-800 border-zinc-700 hover:bg-zinc-700 text-white' : 'bg-white border-zinc-200 hover:bg-zinc-50 text-zinc-700'}`}>
-            <Download size={18} /> Exportar CSV
+        <div className="flex gap-2 md:gap-3 flex-wrap">
+          {/* Product filter - custom dropdown */}
+          <div className="relative flex-1 md:flex-none">
+            <button
+              onClick={() => setProductDropdownOpen(!productDropdownOpen)}
+              className={`w-full md:w-auto flex items-center justify-center md:justify-start gap-2 px-3 md:px-4 py-2.5 md:py-2 rounded-lg text-sm font-medium border transition-all ${isDark ? 'bg-zinc-800 border-zinc-700 text-white hover:bg-zinc-700' : 'bg-white border-zinc-200 text-zinc-700 hover:bg-zinc-50 shadow-sm'}`}
+            >
+              <Filter size={14} className="text-nexus-orange" />
+              {{ ALL: 'Todos', ONE_NEXUS: 'One Nexus', LOCADORAS: 'Locadoras' }[productFilter]}
+              <ChevronDown size={14} className={`transition-transform ${productDropdownOpen ? 'rotate-180' : ''} ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`} />
+            </button>
+            {productDropdownOpen && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setProductDropdownOpen(false)} />
+                <div className={`absolute left-0 top-[calc(100%+4px)] z-20 w-48 max-w-[calc(100vw-2rem)] rounded-xl border shadow-xl overflow-hidden ${isDark ? 'bg-zinc-900 border-zinc-700' : 'bg-white border-zinc-200'}`}>
+                  {([['ALL', 'Todos os Produtos'], ['ONE_NEXUS', 'One Nexus'], ['LOCADORAS', 'Locadoras']] as const).map(([val, label]) => (
+                    <button
+                      key={val}
+                      onClick={() => { setProductFilter(val as any); setProductDropdownOpen(false); }}
+                      className={`w-full text-left px-4 py-2.5 text-sm font-medium transition-colors ${
+                        productFilter === val ? 'text-nexus-orange bg-nexus-orange/5' : isDark ? 'text-zinc-300 hover:bg-zinc-800' : 'text-zinc-600 hover:bg-zinc-50'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+          <button onClick={handleExportCSV} className={`shrink-0 px-3 md:px-4 py-2 rounded-lg text-sm flex items-center gap-1.5 md:gap-2 border active:scale-95 transition-all ${isDark ? 'bg-zinc-800 border-zinc-700 hover:bg-zinc-700 text-white' : 'bg-white border-zinc-200 hover:bg-zinc-50 text-zinc-700'}`}>
+            <Download size={16} className="md:w-[18px] md:h-[18px]" /> <span className="text-xs md:text-sm">CSV</span>
           </button>
-          <button onClick={handleExportPDF} className={`px-4 py-2 rounded-lg text-sm flex items-center gap-2 border ${isDark ? 'bg-zinc-800 border-zinc-700 hover:bg-zinc-700 text-white' : 'bg-white border-zinc-200 hover:bg-zinc-50 text-zinc-700'}`}>
-            <Download size={18} /> Exportar PDF
+          <button onClick={handleExportPDF} className={`shrink-0 px-3 md:px-4 py-2 rounded-lg text-sm flex items-center gap-1.5 md:gap-2 border active:scale-95 transition-all ${isDark ? 'bg-zinc-800 border-zinc-700 hover:bg-zinc-700 text-white' : 'bg-white border-zinc-200 hover:bg-zinc-50 text-zinc-700'}`}>
+            <FileText size={16} className="md:w-[18px] md:h-[18px]" /> <span className="text-xs md:text-sm">PDF</span>
           </button>
-          <button onClick={() => handleOpenModal()} className="px-4 py-2 bg-nexus-orange text-white rounded-lg text-sm font-semibold hover:bg-nexus-orangeDark transition-all active:scale-95 shadow-lg shadow-nexus-orange/20">
-            Nova Transação
+          <button onClick={() => handleOpenModal()} className="w-full md:w-auto flex items-center justify-center gap-2 py-3.5 md:py-2 px-4 bg-nexus-orange text-white rounded-xl md:rounded-lg text-base md:text-sm font-bold hover:bg-nexus-orangeDark transition-all active:scale-95 shadow-lg shadow-nexus-orange/20">
+            <Plus size={20} /> Nova Transação
           </button>
         </div>
       </div>
 
       {/* Métricas */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-2 md:gap-4">
         {metricsLoading ? (
           Array.from({ length: 7 }).map((_, i) => (
-            <div key={i} className={`border p-4 rounded-xl animate-pulse ${isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200'}`}>
+            <div key={i} className={`border p-3 md:p-4 rounded-xl animate-pulse ${isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200'}`}>
               <div className="h-3 bg-zinc-700 rounded w-20 mb-3" />
               <div className="h-6 bg-zinc-700 rounded w-24" />
             </div>
           ))
         ) : metricCards.map((m, i) => (
-          <div key={i} className={`border p-4 rounded-xl relative overflow-hidden group transition-all ${isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200 shadow-sm'}`}>
+          <div key={i} className={`border p-3 md:p-4 rounded-xl relative overflow-hidden group transition-all ${i === metricCards.length - 1 ? 'col-span-2 md:col-span-1' : ''} ${isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200 shadow-sm'}`}>
             {m.ai && <Sparkles size={24} className="absolute -top-1 -right-1 text-nexus-orange/20" />}
             <p className="text-zinc-500 text-[9px] font-bold uppercase tracking-widest flex items-center gap-1.5">
               {m.label} {m.ai && <Sparkles size={10} className="text-nexus-orange animate-pulse" />}
             </p>
             <div className="flex items-end justify-between mt-2">
-              <span className={`text-lg font-bold ${isDark ? 'text-white' : 'text-zinc-900'}`}>{m.formatted}</span>
+              <span className={`text-sm md:text-lg font-bold ${isDark ? 'text-white' : 'text-zinc-900'}`}>{m.formatted}</span>
               {!(m as any).hideTrend && m.trend && (
                 <span className={`text-[10px] font-bold ${m.up ? 'text-green-500' : 'text-red-500'}`}>{m.trend}</span>
               )}
@@ -422,8 +450,8 @@ export const Finance: React.FC = () => {
 
       {/* Gráficos */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className={`border p-6 rounded-2xl ${isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200 shadow-sm'}`}>
-          <div className="flex justify-between items-center mb-6">
+        <div className={`border p-4 md:p-6 rounded-2xl ${isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200 shadow-sm'}`}>
+          <div className="flex flex-col gap-2 md:flex-row md:justify-between md:items-center mb-4 md:mb-6">
             <h3 className={`text-lg font-bold ${isDark ? 'text-white' : 'text-zinc-900'}`}>Breakdown do MRR</h3>
             <div className="flex gap-2">
               {[
@@ -435,7 +463,7 @@ export const Finance: React.FC = () => {
                 <button
                   key={period.value}
                   onClick={() => setMrrPeriod(period.value)}
-                  className={`px-3 py-1 text-xs font-bold rounded-lg transition-all ${
+                  className={`px-3 py-1 text-[10px] md:text-xs font-bold rounded-lg transition-all ${
                     mrrPeriod === period.value
                       ? 'bg-nexus-orange text-white'
                       : isDark
@@ -448,7 +476,7 @@ export const Finance: React.FC = () => {
               ))}
             </div>
           </div>
-          <div className="h-80">
+          <div className="h-48 md:h-80">
             <ResponsiveContainer width="100%" height="100%">
               {mrrPeriod === 999 ? (
                 // MODO ANUAL: Apenas ARR
@@ -527,14 +555,14 @@ export const Finance: React.FC = () => {
           </div>
         </div>
 
-        <div className={`border p-6 rounded-2xl ${isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200 shadow-sm'}`}>
+        <div className={`border p-4 md:p-6 rounded-2xl ${isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200 shadow-sm'}`}>
           <div className="flex justify-between items-center mb-6">
             <h3 className={`text-lg font-bold ${isDark ? 'text-white' : 'text-zinc-900'}`}>Aging Report</h3>
             <div className="text-xs text-zinc-500 flex items-center gap-1">
               <AlertTriangle size={14} className="text-yellow-500" /> Total: {agingReport?.totalFormatted || 'R$ 0'}
             </div>
           </div>
-          <div className="h-64">
+          <div className="h-40 md:h-64">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={agingReport?.data || []} layout="vertical" maxBarSize={50}>
                 <XAxis type="number" hide />
@@ -581,14 +609,14 @@ export const Finance: React.FC = () => {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Clientes com Pendências */}
           {overdueClients.length > 0 && (
-            <div className={`border p-6 rounded-2xl ${isDark ? 'bg-red-950/20 border-red-900/50' : 'bg-red-50 border-red-200'}`}>
+            <div className={`border p-4 md:p-6 rounded-2xl ${isDark ? 'bg-red-950/20 border-red-900/50' : 'bg-red-50 border-red-200'}`}>
               <div className="flex items-center gap-2 mb-4">
                 <AlertCircle className="text-red-500" size={20} />
                 <h3 className={`font-bold ${isDark ? 'text-white' : 'text-zinc-900'}`}>
                   Clientes com Pendências ({overdueClients.length})
                 </h3>
               </div>
-              <div className="space-y-3 max-h-64 overflow-y-auto">
+              <div className="space-y-3 max-h-96 md:max-h-64 overflow-y-auto">
                 {overdueClients.slice(0, 10).map((client: any) => (
                   <div key={client.clientId} className={`p-3 rounded-lg border ${isDark ? 'bg-zinc-900/50 border-zinc-800' : 'bg-white border-zinc-200'}`}>
                     <div className="flex justify-between items-start">
@@ -621,14 +649,14 @@ export const Finance: React.FC = () => {
 
           {/* Vencimentos Próximos (7 dias) */}
           {upcomingDueDates.length > 0 && (
-            <div className={`border p-6 rounded-2xl ${isDark ? 'bg-yellow-950/20 border-yellow-900/50' : 'bg-yellow-50 border-yellow-200'}`}>
+            <div className={`border p-4 md:p-6 rounded-2xl ${isDark ? 'bg-yellow-950/20 border-yellow-900/50' : 'bg-yellow-50 border-yellow-200'}`}>
               <div className="flex items-center gap-2 mb-4">
                 <Clock className="text-yellow-500" size={20} />
                 <h3 className={`font-bold ${isDark ? 'text-white' : 'text-zinc-900'}`}>
                   Vencimentos Próximos - 7 dias ({upcomingDueDates.length})
                 </h3>
               </div>
-              <div className="space-y-3 max-h-64 overflow-y-auto">
+              <div className="space-y-3 max-h-96 md:max-h-64 overflow-y-auto">
                 {upcomingDueDates.slice(0, 10).map((due: any) => (
                   <div key={due.id} className={`p-3 rounded-lg border ${isDark ? 'bg-zinc-900/50 border-zinc-800' : 'bg-white border-zinc-200'}`}>
                     <div className="flex justify-between items-start">
@@ -666,15 +694,23 @@ export const Finance: React.FC = () => {
 
       {/* Tabela */}
       <div className={`border rounded-2xl overflow-hidden ${isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200 shadow-sm'}`}>
-        <div className={`p-6 border-b ${isDark ? 'border-zinc-800' : 'border-zinc-200'}`}>
-          <h3 className={`font-bold mb-4 ${isDark ? 'text-white' : 'text-zinc-900'}`}>Últimas Transações</h3>
+        <div className={`p-4 md:p-6 border-b ${isDark ? 'border-zinc-800' : 'border-zinc-200'}`}>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className={`font-bold ${isDark ? 'text-white' : 'text-zinc-900'}`}>Últimas Transações</h3>
+            <button
+              onClick={() => setFilters({ category: '', status: '', sortByDate: '', sortByAmount: '' })}
+              className="text-sm text-nexus-orange hover:underline font-semibold md:hidden"
+            >
+              Limpar Filtros
+            </button>
+          </div>
 
           {/* Filtros Minimalistas */}
-          <div className="flex gap-3 items-center flex-wrap">
+          <div className="grid grid-cols-2 gap-2 md:flex md:flex-row md:gap-3 md:items-center md:flex-wrap">
             <select
               value={filters.category}
               onChange={(e) => setFilters({ ...filters, category: e.target.value as any })}
-              className={`px-3 py-2 rounded-lg text-sm border ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-zinc-200 text-zinc-700'}`}
+              className={`md:w-auto px-3 py-3 md:py-2 rounded-lg text-sm border ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-zinc-200 text-zinc-700'}`}
             >
               <option value="">Todas Categorias</option>
               <option value="SUBSCRIPTION">Assinatura</option>
@@ -687,7 +723,7 @@ export const Finance: React.FC = () => {
             <select
               value={filters.status}
               onChange={(e) => setFilters({ ...filters, status: e.target.value as any })}
-              className={`px-3 py-2 rounded-lg text-sm border ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-zinc-200 text-zinc-700'}`}
+              className={`md:w-auto px-3 py-3 md:py-2 rounded-lg text-sm border ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-zinc-200 text-zinc-700'}`}
             >
               <option value="">Todos Status</option>
               <option value="PAID">Pago</option>
@@ -699,7 +735,7 @@ export const Finance: React.FC = () => {
             <select
               value={filters.sortByDate}
               onChange={(e) => setFilters({ ...filters, sortByDate: e.target.value as any })}
-              className={`px-3 py-2 rounded-lg text-sm border ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-zinc-200 text-zinc-700'}`}
+              className={`md:w-auto px-3 py-3 md:py-2 rounded-lg text-sm border ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-zinc-200 text-zinc-700'}`}
             >
               <option value="">Ordenar: Data</option>
               <option value="desc">Mais recentes primeiro</option>
@@ -709,7 +745,7 @@ export const Finance: React.FC = () => {
             <select
               value={filters.sortByAmount}
               onChange={(e) => setFilters({ ...filters, sortByAmount: e.target.value as any })}
-              className={`px-3 py-2 rounded-lg text-sm border ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-zinc-200 text-zinc-700'}`}
+              className={`md:w-auto px-3 py-3 md:py-2 rounded-lg text-sm border ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-zinc-200 text-zinc-700'}`}
             >
               <option value="">Ordenar: Valor</option>
               <option value="desc">Maior valor primeiro</option>
@@ -718,12 +754,39 @@ export const Finance: React.FC = () => {
 
             <button
               onClick={() => setFilters({ category: '', status: '', sortByDate: '', sortByAmount: '' })}
-              className="text-sm text-nexus-orange hover:underline font-semibold"
+              className="hidden md:block text-sm text-nexus-orange hover:underline font-semibold"
             >
               Limpar Filtros
             </button>
           </div>
         </div>
+        {/* Mobile Transaction Cards */}
+        <div className="md:hidden divide-y divide-zinc-800/50">
+          {transactions.length === 0 ? (
+            <div className="p-8 text-center text-zinc-500">Nenhuma transação</div>
+          ) : transactions.map(t => (
+            <div key={t.id} className={`p-4 ${isDark ? '' : 'divide-zinc-100'}`}>
+              <div className="flex items-center justify-between">
+                <div className="flex-1 min-w-0">
+                  <p className={`text-sm font-medium truncate ${isDark ? 'text-white' : 'text-zinc-900'}`}>{t.client}</p>
+                  <p className="text-xs text-zinc-500 mt-0.5">{t.categoryLabel} · {t.dateFormatted}</p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0 ml-3">
+                  <button onClick={() => handleOpenModal(t)} className="p-2 text-blue-500 hover:bg-blue-500/10 rounded-lg active:scale-95 transition-transform" title="Editar"><Edit size={14} /></button>
+                  {t.status === 'PENDING' && (
+                    <button onClick={() => markPaidMutation.mutate(t.id)} className="p-2 text-green-500 hover:bg-green-500/10 rounded-lg active:scale-95 transition-transform" title="Pagar"><Check size={14} /></button>
+                  )}
+                  <button onClick={() => setDeleteConfirm({ id: t.id, client: t.client })} className="p-2 text-red-500 hover:bg-red-500/10 rounded-lg active:scale-95 transition-transform" title="Excluir"><X size={14} /></button>
+                </div>
+              </div>
+              <div className="flex items-center justify-between mt-2">
+                <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${t.statusColor}`}>{t.statusLabel}</span>
+                <p className={`text-sm font-bold font-mono ${isDark ? 'text-zinc-200' : 'text-zinc-800'}`}>{t.amountFormatted}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="hidden md:block">
         <table className="w-full text-left">
           <thead className={`${isDark ? 'bg-zinc-950/30 text-zinc-500' : 'bg-zinc-50 text-zinc-400'} text-xs font-bold uppercase`}>
             <tr>
@@ -777,11 +840,7 @@ export const Finance: React.FC = () => {
                         <Check size={16} />
                       </button>
                     )}
-                    <button onClick={() => {
-                      if (window.confirm('Tem certeza de que deseja excluir esta transação? Esta ação não pode ser desfeita.')) {
-                        deleteMutation.mutate(t.id);
-                      }
-                    }} className="p-1 text-red-500 hover:bg-red-500/10 rounded" title="Excluir">
+                    <button onClick={() => setDeleteConfirm({ id: t.id, client: t.client })} className="p-1 text-red-500 hover:bg-red-500/10 rounded" title="Excluir">
                       <X size={16} />
                     </button>
                   </div>
@@ -790,14 +849,15 @@ export const Finance: React.FC = () => {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className={`${isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200'} border w-full max-w-lg rounded-2xl`}>
-            <form onSubmit={handleSubmit}>
-              <div className={`p-6 border-b ${isDark ? 'border-zinc-800' : 'border-zinc-200'} flex justify-between items-center`}>
+        <div className="fixed inset-0 z-50 flex items-end md:items-center md:justify-center md:p-4 bg-black/60 backdrop-blur-sm">
+          <div className={`${isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200'} border w-full max-w-full md:max-w-lg max-h-[calc(100%-1rem)] md:max-h-[90vh] md:h-auto rounded-t-2xl md:rounded-2xl overflow-hidden flex flex-col`}>
+            <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
+              <div className={`p-4 md:p-6 border-b shrink-0 ${isDark ? 'border-zinc-800' : 'border-zinc-200'} flex justify-between items-center`}>
                 <h2 className={`text-lg font-bold ${isDark ? 'text-white' : 'text-zinc-900'}`}>
                   {editingTransaction ? 'Editar Transação' : 'Nova Transação'}
                 </h2>
@@ -807,11 +867,11 @@ export const Finance: React.FC = () => {
                   setForm({ description: '', amount: '', date: '', dueDate: '', category: 'SUBSCRIPTION', status: 'PENDING', clientId: '', productType: '', isRecurring: false });
                 }} className="text-zinc-500"><X size={20} /></button>
               </div>
-              <div className="p-6 space-y-4">
+              <div className="p-4 md:p-6 space-y-4 flex-1 overflow-y-auto overscroll-contain">
                 <div>
                   <label className="text-xs font-bold text-zinc-500 uppercase">Cliente (opcional)</label>
                   <select
-                    className={`w-full mt-1 rounded-lg px-4 py-2 text-sm border ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-zinc-100 border-zinc-300'}`}
+                    className={`w-full mt-1 rounded-lg px-4 py-3 md:py-2 text-base md:text-sm border ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-zinc-100 border-zinc-300'}`}
                     value={form.clientId}
                     onChange={e => setForm({...form, clientId: e.target.value, productType: e.target.value ? (clients.find(c => c.id === e.target.value)?.productType || '') : form.productType})}
                   >
@@ -828,7 +888,7 @@ export const Finance: React.FC = () => {
                     <label className="text-xs font-bold text-zinc-500 uppercase">Produto *</label>
                     <select
                       required
-                      className={`w-full mt-1 rounded-lg px-4 py-2 text-sm border ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-zinc-100 border-zinc-300'}`}
+                      className={`w-full mt-1 rounded-lg px-4 py-3 md:py-2 text-base md:text-sm border ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-zinc-100 border-zinc-300'}`}
                       value={form.productType}
                       onChange={e => setForm({...form, productType: e.target.value as 'ONE_NEXUS' | 'LOCADORAS'})}
                     >
@@ -840,28 +900,28 @@ export const Finance: React.FC = () => {
                 )}
                 <div>
                   <label className="text-xs font-bold text-zinc-500 uppercase">Descrição</label>
-                  <input required className={`w-full mt-1 rounded-lg px-4 py-2 text-sm border ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-zinc-100 border-zinc-300'}`} value={form.description} onChange={e => setForm({...form, description: e.target.value})} />
+                  <input required className={`w-full mt-1 rounded-lg px-4 py-3 md:py-2 text-base md:text-sm border ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-zinc-100 border-zinc-300'}`} value={form.description} onChange={e => setForm({...form, description: e.target.value})} />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="text-xs font-bold text-zinc-500 uppercase">Valor (R$)</label>
-                    <input required type="number" step="0.01" className={`w-full mt-1 rounded-lg px-4 py-2 text-sm border ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-zinc-100 border-zinc-300'}`} value={form.amount} onChange={e => setForm({...form, amount: e.target.value})} />
+                    <input required type="number" step="0.01" className={`w-full mt-1 rounded-lg px-4 py-3 md:py-2 text-base md:text-sm border ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-zinc-100 border-zinc-300'}`} value={form.amount} onChange={e => setForm({...form, amount: e.target.value})} />
                   </div>
                   <div>
                     <label className="text-xs font-bold text-zinc-500 uppercase">Data</label>
-                    <input required type="date" className={`w-full mt-1 rounded-lg px-4 py-2 text-sm border ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-zinc-100 border-zinc-300'}`} value={form.date} onChange={e => setForm({...form, date: e.target.value})} />
+                    <input required type="date" className={`w-full mt-1 rounded-lg px-4 py-3 md:py-2 text-base md:text-sm border ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-zinc-100 border-zinc-300'}`} value={form.date} onChange={e => setForm({...form, date: e.target.value})} />
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="text-xs font-bold text-zinc-500 uppercase">Categoria</label>
-                    <select className={`w-full mt-1 rounded-lg px-4 py-2 text-sm border ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-zinc-100 border-zinc-300'}`} value={form.category} onChange={e => setForm({...form, category: e.target.value as TransactionCategory})}>
+                    <select className={`w-full mt-1 rounded-lg px-4 py-3 md:py-2 text-base md:text-sm border ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-zinc-100 border-zinc-300'}`} value={form.category} onChange={e => setForm({...form, category: e.target.value as TransactionCategory})}>
                       {Object.entries(CATEGORY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                     </select>
                   </div>
                   <div>
                     <label className="text-xs font-bold text-zinc-500 uppercase">Status</label>
-                    <select className={`w-full mt-1 rounded-lg px-4 py-2 text-sm border ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-zinc-100 border-zinc-300'}`} value={form.status} onChange={e => setForm({...form, status: e.target.value as TransactionStatus})}>
+                    <select className={`w-full mt-1 rounded-lg px-4 py-3 md:py-2 text-base md:text-sm border ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-zinc-100 border-zinc-300'}`} value={form.status} onChange={e => setForm({...form, status: e.target.value as TransactionStatus})}>
                       {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                     </select>
                   </div>
@@ -877,7 +937,7 @@ export const Finance: React.FC = () => {
                       type="date"
                       value={form.dueDate}
                       onChange={(e) => setForm({ ...form, dueDate: e.target.value })}
-                      className={`w-full mt-1 rounded-lg px-4 py-2 text-sm border ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-zinc-100 border-zinc-300'}`}
+                      className={`w-full mt-1 rounded-lg px-4 py-3 md:py-2 text-base md:text-sm border ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-zinc-100 border-zinc-300'}`}
                       required={form.category === 'SUBSCRIPTION'}
                     />
                     <p className="text-xs text-zinc-500 mt-1">
@@ -891,13 +951,13 @@ export const Finance: React.FC = () => {
                   <label htmlFor="isRecurring" className="text-sm text-zinc-400">Recorrente (MRR)</label>
                 </div>
               </div>
-              <div className={`p-6 border-t flex gap-4 ${isDark ? 'bg-zinc-950 border-zinc-800' : 'bg-zinc-50 border-zinc-100'}`}>
+              <div className={`p-4 md:p-6 border-t shrink-0 flex flex-col-reverse md:flex-row gap-2 md:gap-4 ${isDark ? 'bg-zinc-950 border-zinc-800' : 'bg-zinc-50 border-zinc-100'}`}>
                 <button type="button" onClick={() => {
                   setIsModalOpen(false);
                   setEditingTransaction(null);
                   setForm({ description: '', amount: '', date: '', dueDate: '', category: 'SUBSCRIPTION', status: 'PENDING', clientId: '', productType: '', isRecurring: false });
-                }} className="flex-1 py-2 text-zinc-500 text-sm font-bold">Cancelar</button>
-                <button type="submit" disabled={createMutation.isPending || updateMutation.isPending} className="flex-1 py-2 bg-nexus-orange text-white rounded-lg text-sm font-bold disabled:opacity-50">
+                }} className="w-full md:flex-1 py-2.5 md:py-2 text-zinc-500 text-sm font-bold">Cancelar</button>
+                <button type="submit" disabled={createMutation.isPending || updateMutation.isPending} className="w-full md:flex-1 py-2.5 md:py-2 bg-nexus-orange text-white rounded-lg text-sm font-bold disabled:opacity-50">
                   {(createMutation.isPending || updateMutation.isPending) ? 'Salvando...' : editingTransaction ? 'Atualizar' : 'Salvar'}
                 </button>
               </div>
@@ -913,6 +973,41 @@ export const Finance: React.FC = () => {
           clientName={selectedClient.name}
           onClose={() => setSelectedClient(null)}
         />
+      )}
+
+      {/* Modal de confirmação de exclusão */}
+      {deleteConfirm && createPortal(
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in" onClick={() => setDeleteConfirm(null)}>
+          <div onClick={(e) => e.stopPropagation()} className={`mx-4 w-full max-w-sm rounded-2xl border shadow-2xl p-6 ${isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200'}`}>
+            <div className="text-center">
+              <div className="mx-auto w-12 h-12 rounded-full bg-red-500/10 flex items-center justify-center mb-4">
+                <Trash2 size={24} className="text-red-500" />
+              </div>
+              <h3 className={`text-lg font-bold mb-1 ${isDark ? 'text-white' : 'text-zinc-900'}`}>Excluir transacao?</h3>
+              <p className="text-sm text-zinc-500">
+                Transacao de <span className="font-semibold">{deleteConfirm.client}</span> sera removida permanentemente.
+              </p>
+            </div>
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => setDeleteConfirm(null)}
+                className={`flex-1 py-3 rounded-xl font-semibold text-sm transition-all active:scale-95 ${isDark ? 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700' : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200'}`}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => {
+                  deleteMutation.mutate(deleteConfirm.id);
+                  setDeleteConfirm(null);
+                }}
+                className="flex-1 py-3 rounded-xl font-semibold text-sm bg-red-500 text-white hover:bg-red-600 transition-all active:scale-95"
+              >
+                Excluir
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
 
     </div>

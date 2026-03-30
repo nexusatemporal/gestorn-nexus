@@ -65,12 +65,14 @@ export class TenantsController {
   }
 
   /**
-   * GET /tenants/:id
-   * Busca tenant por ID (com validação de acesso)
+   * GET /tenants/modules/available
+   * Retorna lista de módulos disponíveis no One Nexus (ou fallback padrão).
+   * Usado pelo frontend para renderizar os checkboxes de módulos (V1 - legado).
    */
-  @Get(':id')
-  async findOne(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    return this.tenantsService.findOne(id, user.id, user.role);
+  @Get('modules/available')
+  @Roles(UserRole.SUPERADMIN, UserRole.ADMINISTRATIVO, UserRole.GESTOR, UserRole.VENDEDOR, UserRole.DESENVOLVEDOR)
+  async getAvailableModules() {
+    return this.tenantsService.getAvailableModules();
   }
 
   /**
@@ -92,6 +94,15 @@ export class TenantsController {
     @CurrentUser() user: AuthUser,
   ) {
     return this.tenantsService.findByTenantUuid(tenantUuid, user.id, user.role);
+  }
+
+  /**
+   * GET /tenants/:id
+   * Busca tenant por ID (com validação de acesso)
+   */
+  @Get(':id')
+  async findOne(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.tenantsService.findOne(id, user.id, user.role);
   }
 
   /**
@@ -211,5 +222,98 @@ export class TenantsController {
     },
   ) {
     return this.tenantsService.updateMetrics(id, metrics);
+  }
+
+  /**
+   * GET /tenants/:id/modules/tree
+   * Retorna árvore hierárquica de módulos do tenant (V3).
+   * 12 pais com children[], isEnabled efetivo.
+   *
+   * Requer tenant provisionado (tenantUuid).
+   */
+  @Get(':id/modules/tree')
+  @Roles(UserRole.SUPERADMIN, UserRole.ADMINISTRATIVO, UserRole.GESTOR, UserRole.DESENVOLVEDOR)
+  async getModulesTree(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.tenantsService.getModulesTree(id, user.id, user.role as UserRole);
+  }
+
+  /**
+   * PATCH /tenants/:id/modules/toggle
+   * Toggle individual de módulos com cascata automática (V3).
+   * Desabilitar pai → desabilita todos filhos.
+   * Habilitar filho → habilita pai.
+   *
+   * Body: { modules: [{ moduleId: string, isEnabled: boolean }] }
+   *
+   * NOTA: Pipe aplicado diretamente no @Body() para não validar @Param/:CurrentUser
+   */
+  @Patch(':id/modules/toggle')
+  @Roles(UserRole.SUPERADMIN, UserRole.ADMINISTRATIVO, UserRole.GESTOR)
+  async toggleModules(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(
+      z.object({
+        modules: z.array(z.object({
+          moduleId: z.string(),
+          isEnabled: z.boolean(),
+        })),
+      }),
+    )) body: { modules: { moduleId: string; isEnabled: boolean }[] },
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.tenantsService.toggleModules(id, body.modules, user.id, user.role as UserRole);
+  }
+
+  /**
+   * PATCH /tenants/:id/modules/enable-all
+   * Habilita todos os 77 módulos do tenant (V3).
+   */
+  @Patch(':id/modules/enable-all')
+  @Roles(UserRole.SUPERADMIN, UserRole.DESENVOLVEDOR)
+  @HttpCode(HttpStatus.OK)
+  async enableAllModules(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.tenantsService.enableAllModules(id, user.id, user.role as UserRole);
+  }
+
+  /**
+   * PATCH /tenants/:id/modules/preset
+   * Aplica preset de módulos (V3).
+   * Presets: all, basic, clinical, business, enterprise, none
+   *
+   * NOTA: Pipe aplicado diretamente no @Body() para não validar @Param/:CurrentUser
+   */
+  @Patch(':id/modules/preset')
+  @Roles(UserRole.SUPERADMIN, UserRole.ADMINISTRATIVO, UserRole.GESTOR)
+  async applyModulePreset(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(
+      z.object({
+        preset: z.enum(['all', 'basic', 'clinical', 'business', 'enterprise', 'none']),
+      }),
+    )) body: { preset: string },
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.tenantsService.applyModulePreset(id, body.preset, user.id, user.role as UserRole);
+  }
+
+  /**
+   * PATCH /tenants/:id/modules
+   * Atualiza os módulos habilitados de um tenant (V1 - legado).
+   * Mantido para compatibilidade retroativa.
+   *
+   * NOTA: Pipe aplicado diretamente no @Body() para não validar @Param/:CurrentUser
+   */
+  @Patch(':id/modules')
+  @Roles(UserRole.SUPERADMIN, UserRole.ADMINISTRATIVO, UserRole.GESTOR)
+  async updateModules(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(
+      z.object({
+        modules: z.array(z.string()).default([]),
+      }),
+    )) body: { modules: string[] },
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.tenantsService.updateEnabledModules(id, body.modules, user.id, user.role as UserRole);
   }
 }

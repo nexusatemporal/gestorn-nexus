@@ -50,12 +50,14 @@ export class PlansController {
   }
 
   /**
-   * GET /plans/:id
-   * Busca um plano por ID
+   * GET /plans/modules-catalog
+   * Retorna o catálogo completo de módulos do One Nexus (árvore hierárquica)
+   * para uso na configuração de módulos inclusos dos planos.
    */
-  @Get(':id')
-  async findOne(@Param('id') id: string) {
-    return this.plansService.findOne(id);
+  @Get('modules-catalog')
+  @Roles(UserRole.SUPERADMIN, UserRole.ADMINISTRATIVO)
+  async getModulesCatalog() {
+    return this.plansService.getModulesCatalog();
   }
 
   /**
@@ -65,6 +67,15 @@ export class PlansController {
   @Get('code/:code')
   async findByCode(@Param('code') code: string) {
     return this.plansService.findByCode(code);
+  }
+
+  /**
+   * GET /plans/:id
+   * Busca um plano por ID
+   */
+  @Get(':id')
+  async findOne(@Param('id') id: string) {
+    return this.plansService.findOne(id);
   }
 
   /**

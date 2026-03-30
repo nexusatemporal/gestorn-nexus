@@ -87,3 +87,6 @@ docker/containers.txt
 docker/docker-compose.yml
 docker/images.txt
 docker/services.txt
+
+# Scripts com secrets (webhook URLs)
+scripts/notify-discord.sh

@@ -5,11 +5,14 @@ import {
   ForbiddenException,
   Logger,
   BadRequestException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '@/prisma/prisma.service';
 import { SubscriptionService } from '../subscriptions/subscriptions.service'; // v2.46.0
 import { TenantsService } from '../tenants/tenants.service';
+import { OneNexusService } from '../integrations/one-nexus/one-nexus.service';
+import { AuthUser } from '@/common/interfaces/auth-user.interface';
 import { CreateClientDto } from './dto/create-client.dto';
 import { UpdateClientDto } from './dto/update-client.dto';
 import { UserRole, ClientStatus, ProductType, LeadStatus } from '@prisma/client';
@@ -35,6 +38,7 @@ export class ClientsService {
     private readonly prisma: PrismaService,
     private readonly subscriptionService: SubscriptionService, // v2.46.0
     private readonly tenantsService: TenantsService,
+    private readonly oneNexusService: OneNexusService,
   ) {}
 
   /**
@@ -228,8 +232,11 @@ export class ClientsService {
    * Buscar cliente por CPF/CNPJ
    */
   async findByCpfCnpj(cpfCnpj: string, currentUserId: string, currentUserRole: UserRole) {
-    const client = await this.prisma.client.findUnique({
-      where: { cpfCnpj: cpfCnpj.replace(/\D/g, '') },
+    const client = await this.prisma.client.findFirst({
+      where: {
+        cpfCnpj: cpfCnpj.replace(/\D/g, ''),
+        status: { not: 'CANCELADO' as any },
+      },
       include: {
         vendedor: {
           select: {
@@ -285,9 +292,12 @@ export class ClientsService {
       }
     }
 
-    // Verificar se CPF/CNPJ já existe
-    const existingCpfCnpj = await this.prisma.client.findUnique({
-      where: { cpfCnpj: dto.cpfCnpj },
+    // Verificar se CPF/CNPJ já existe (ignora clientes CANCELADOS — podem ser recriados)
+    const existingCpfCnpj = await this.prisma.client.findFirst({
+      where: {
+        cpfCnpj: dto.cpfCnpj,
+        status: { not: 'CANCELADO' as any },
+      },
     });
 
     if (existingCpfCnpj) {
@@ -352,10 +362,15 @@ export class ClientsService {
     }
 
     // Criar cliente em transação (incluindo atualização do lead)
-    const client = await this.prisma.$transaction(async (tx) => {
+    // ✅ v2.63.2: Try-catch externo para capturar P2002 de race conditions (double submit)
+    let client: any;
+    try {
+    client = await this.prisma.$transaction(async (tx) => {
       // Criar cliente
+      // ✅ v2.60.0: Extrair billingAnchorDay antes de passar ao Prisma (campo pertence à Subscription, não ao Client)
+      const { billingAnchorDay: _billingAnchorDay, ...clientData } = dto as any;
       const newClient = await tx.client.create({
-        data: dto as any, // ✅ v2.45.0: Type assertion (vendedorId sempre tem valor, campos opcionais OK)
+        data: clientData,
         include: {
           vendedor: {
             select: {
@@ -464,6 +479,20 @@ export class ClientsService {
 
       return newClient;
     });
+    } catch (err: any) {
+      // ✅ v2.63.2: P2002 = unique constraint violation (race condition double submit ou email duplicado)
+      if (err?.code === 'P2002') {
+        const field = err?.meta?.target?.[0] || 'campo';
+        if (field === 'cpfCnpj' || (err?.meta?.target as string[])?.includes('cpfCnpj')) {
+          throw new ConflictException(`Cliente com CPF/CNPJ ${dto.cpfCnpj} já existe`);
+        }
+        if (field === 'email' || (err?.meta?.target as string[])?.includes('email')) {
+          throw new ConflictException(`Cliente com email ${dto.email} já existe`);
+        }
+        throw new ConflictException(`Dados duplicados: ${field} já existe no sistema`);
+      }
+      throw err;
+    }
 
     this.logger.log(
       `✅ Cliente criado: ${client.company} (${client.contactName}) - Vendedor: ${vendedor.name}${dto.leadId ? ' [Convertido de Lead]' : ''}`,
@@ -671,6 +700,9 @@ export class ClientsService {
     // ✅ v2.44.2: Sincronizar transações financeiras após cancelamento
     await this.syncFinanceOnClientCancellation(id);
 
+    // ✅ v2.65.3: Sincronizar cancelamento com One Nexus
+    await this.tenantsService.syncStatusToOneNexus(id, 'canceled');
+
     return updated;
   }
 
@@ -700,6 +732,9 @@ export class ClientsService {
     });
 
     this.logger.log(`✅ Cliente reativado: ${client.company} (${client.contactName})`);
+
+    // ✅ v2.65.3: Sincronizar reativação com One Nexus
+    await this.tenantsService.syncStatusToOneNexus(id, 'active');
 
     return updated;
   }
@@ -746,7 +781,12 @@ export class ClientsService {
       `Solicitante: ${currentUserId}`,
     );
 
-    // 4. Deletar cliente (CASCADE deleta: tenant, payments, transactions, logs)
+    // 4. Deletar tenant no One Nexus ANTES do cascade (para não perder o tenantUuid)
+    if (client.tenant?.tenantUuid) {
+      await this.tenantsService.deleteOnOneNexus(client.tenant.tenantUuid);
+    }
+
+    // 5. Deletar cliente (CASCADE deleta: tenant, payments, transactions, logs)
     await this.prisma.client.delete({
       where: { id },
     });
@@ -1158,5 +1198,147 @@ export class ClientsService {
     // Fallback final: NULL (sem dados)
     this.logger.debug(`  ❌ Retornando NULL (sem dados)`);
     return null;
+  }
+
+  // ════════════════════════════════════════════════════════════════
+  // IMPERSONATE METHODS
+  // ════════════════════════════════════════════════════════════════
+
+  /**
+   * Inicia sessão de impersonate para um cliente One Nexus.
+   * Chama API do One Nexus, registra log de auditoria e retorna magicLink.
+   *
+   * REQUER: SUPERADMIN, DESENVOLVEDOR ou GESTOR
+   */
+  async startImpersonate(
+    clientId: string,
+    currentUser: AuthUser,
+    reason: string,
+    ipAddress: string,
+    userAgent: string,
+  ): Promise<{ magicLink: string; sessionId: string; logId: string }> {
+    // Verificar permissão
+    const allowedRoles: UserRole[] = [UserRole.SUPERADMIN, UserRole.DESENVOLVEDOR, UserRole.GESTOR];
+    if (!allowedRoles.includes(currentUser.role)) {
+      throw new ForbiddenException('Apenas SUPERADMIN, DESENVOLVEDOR ou GESTOR podem usar impersonate');
+    }
+
+    // Buscar cliente com tenant
+    const client = await this.prisma.client.findUnique({
+      where: { id: clientId },
+      include: { tenant: true },
+    });
+
+    if (!client) {
+      throw new NotFoundException('Cliente não encontrado');
+    }
+
+    // Validar escopo de acesso (GESTOR só pode impersonate clientes da sua equipe)
+    await this.validateAccess(client.vendedorId, currentUser.id, currentUser.role);
+
+    // Validar tenant e tenantUuid
+    if (!client.tenant) {
+      throw new BadRequestException('Este cliente não possui tenant provisionado no One Nexus');
+    }
+
+    if (!client.tenant.tenantUuid) {
+      throw new BadRequestException('Tenant do cliente ainda não foi sincronizado com o One Nexus (tenantUuid ausente)');
+    }
+
+    // Chamar One Nexus API
+    const result = await this.oneNexusService.startImpersonate(
+      client.tenant.tenantUuid,
+      reason,
+    );
+
+    if (!result) {
+      throw new ServiceUnavailableException(
+        'Não foi possível iniciar o impersonate. Verifique a integração com o One Nexus.',
+      );
+    }
+
+    // Registrar log de auditoria
+    const log = await this.prisma.impersonateLog.create({
+      data: {
+        userId: currentUser.id,
+        clientId,
+        tenantId: client.tenant.id,
+        reason,
+        ipAddress,
+        userAgent,
+        actions: { oneNexusSessionId: result.sessionId },
+      },
+    });
+
+    this.logger.log(
+      `[Impersonate] ✅ Sessão iniciada por ${currentUser.id} para cliente ${clientId} (sessionId=${result.sessionId}, logId=${log.id})`,
+    );
+
+    return {
+      magicLink: result.magicLink,
+      sessionId: result.sessionId,
+      logId: log.id,
+    };
+  }
+
+  /**
+   * Encerra sessão de impersonate e registra endedAt no log.
+   *
+   * REQUER: Dono do log OU SUPERADMIN
+   */
+  async endImpersonate(
+    logId: string,
+    currentUser: AuthUser,
+  ): Promise<{ success: boolean }> {
+    const log = await this.prisma.impersonateLog.findUnique({
+      where: { id: logId },
+    });
+
+    if (!log) {
+      throw new NotFoundException('Log de impersonate não encontrado');
+    }
+
+    // Validar acesso: dono do log ou SUPERADMIN
+    if (log.userId !== currentUser.id && currentUser.role !== UserRole.SUPERADMIN) {
+      throw new ForbiddenException('Apenas o usuário que iniciou o impersonate ou SUPERADMIN pode encerrá-lo');
+    }
+
+    // Encerrar no One Nexus
+    const sessionId = (log.actions as any)?.oneNexusSessionId;
+    if (sessionId) {
+      const ended = await this.oneNexusService.endImpersonate(sessionId);
+      if (!ended) {
+        this.logger.warn(
+          `[Impersonate] ⚠️ Falha ao encerrar sessão no One Nexus (sessionId=${sessionId}) — sessão local marcada como encerrada`,
+        );
+      }
+    }
+
+    // Registrar encerramento
+    await this.prisma.impersonateLog.update({
+      where: { id: logId },
+      data: { endedAt: new Date() },
+    });
+
+    this.logger.log(`[Impersonate] ✅ Sessão encerrada: logId=${logId}, sessionId=${sessionId}`);
+
+    return { success: true };
+  }
+
+  /**
+   * Busca histórico de impersonate de um cliente.
+   */
+  async getClientImpersonateLogs(clientId: string) {
+    const client = await this.prisma.client.findUnique({ where: { id: clientId } });
+    if (!client) {
+      throw new NotFoundException('Cliente não encontrado');
+    }
+
+    return this.prisma.impersonateLog.findMany({
+      where: { clientId },
+      include: { user: { select: { id: true, name: true } } },
+      orderBy: { startedAt: 'desc' },
+      take: 50,
+    });
   }
 }

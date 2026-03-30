@@ -4,6 +4,7 @@ import {
   Post,
   Delete,
   Query,
+  Headers,
   HttpCode,
   HttpStatus,
   Redirect,
@@ -126,6 +127,35 @@ export class CalendarGoogleController {
       events,
       message: `${events.length} eventos importados do Google Calendar`,
     };
+  }
+
+  /**
+   * POST /calendar/google/webhook
+   * Recebe push notifications do Google Calendar
+   *
+   * IMPORTANTE: @Public() - Google não envia JWT
+   * Validação via channelId (UUID) + resourceId
+   * Sempre retorna 200 (Google requer resposta rápida)
+   */
+  @Public()
+  @Post('webhook')
+  @HttpCode(HttpStatus.OK)
+  async handleWebhook(
+    @Headers('x-goog-channel-id') channelId: string,
+    @Headers('x-goog-resource-id') resourceId: string,
+    @Headers('x-goog-resource-state') resourceState: string,
+  ) {
+    // Notificação de confirmação do watch — não tem dados
+    if (resourceState === 'sync') {
+      return;
+    }
+
+    if (!channelId || !resourceId) {
+      return;
+    }
+
+    // Fire-and-forget — não bloquear resposta ao Google
+    this.googleService.handleWebhookNotification(channelId, resourceId).catch(() => {});
   }
 
   /**

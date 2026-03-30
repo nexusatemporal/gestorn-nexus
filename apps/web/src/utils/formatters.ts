@@ -5,6 +5,50 @@
  */
 
 /**
+ * Valida CNPJ usando algoritmo Módulo 11.
+ * Retorna true se o CNPJ for matematicamente válido.
+ * Aceita com ou sem formatação: "12.345.678/0001-90" ou "12345678000190"
+ */
+export function validateCnpj(cnpj: string): boolean {
+  const d = cnpj.replace(/\D/g, '');
+  if (d.length !== 14 || /^(\d)\1+$/.test(d)) return false;
+  const w1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+  const w2 = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+  const calc = (digits: string, w: number[]) => {
+    const r = w.reduce((acc, v, i) => acc + parseInt(digits[i]) * v, 0) % 11;
+    return r < 2 ? 0 : 11 - r;
+  };
+  return calc(d, w1) === parseInt(d[12]) && calc(d, w2) === parseInt(d[13]);
+}
+
+/**
+ * Valida CPF usando algoritmo Módulo 11.
+ * Retorna true se o CPF for matematicamente válido.
+ * Aceita com ou sem formatação: "123.456.789-09" ou "12345678909"
+ */
+export function validateCpf(cpf: string): boolean {
+  const d = cpf.replace(/\D/g, '');
+  if (d.length !== 11 || /^(\d)\1+$/.test(d)) return false;
+  const calc = (digits: string, len: number) => {
+    const r = Array.from({ length: len }, (_, i) => parseInt(digits[i]) * (len + 1 - i)).reduce((a, b) => a + b, 0);
+    const mod = (r * 10) % 11;
+    return mod >= 10 ? 0 : mod;
+  };
+  return calc(d, 9) === parseInt(d[9]) && calc(d, 10) === parseInt(d[10]);
+}
+
+/**
+ * Valida CPF ou CNPJ automaticamente baseado no comprimento.
+ * Aceita com ou sem formatação.
+ */
+export function validateCpfCnpj(value: string): boolean {
+  const d = value.replace(/\D/g, '');
+  if (d.length === 11) return validateCpf(d);
+  if (d.length === 14) return validateCnpj(d);
+  return false;
+}
+
+/**
  * Formata CPF: 12345678900 → 123.456.789-00
  */
 export function formatCPF(cpf: string): string {

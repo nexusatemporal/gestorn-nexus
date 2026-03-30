@@ -1,6 +1,8 @@
 import { Injectable, Logger, NotFoundException, BadRequestException, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { TenantsService } from '../tenants/tenants.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationType } from '@prisma/client';
 import { Cron } from '@nestjs/schedule';
 import {
   nowBrasilia,
@@ -20,11 +22,13 @@ export class SubscriptionService implements OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
     private readonly tenantsService: TenantsService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   onModuleInit() {
     this.logger.log('═══════════════════════════════════════════════');
     this.logger.log('🔄 SubscriptionsService INICIALIZADO');
+    this.logger.log('📅 Cron upcoming-billing: 08:00 UTC (05:00 BRT)');
     this.logger.log('📅 Cron billing-renewal: 09:00 UTC (06:00 BRT)');
     this.logger.log('📅 Cron overdue-detection: 12:00 UTC (09:00 BRT)');
     this.logger.log('═══════════════════════════════════════════════');
@@ -279,10 +283,90 @@ export class SubscriptionService implements OnModuleInit {
         });
       } catch (error) {
         this.logger.error(`❌ Erro ao renovar subscription ${sub.id}: ${error.message}`);
+
+        // ✅ v2.60.0: Notificar admins sobre falha crítica
+        const empresa = sub.client?.company || sub.id;
+        this.prisma.user.findMany({
+          where: { role: { in: ['SUPERADMIN', 'ADMINISTRATIVO'] } },
+          select: { id: true },
+        }).then((admins) => {
+          if (admins.length > 0) {
+            this.notificationsService.createBulk({
+              userIds: admins.map((u) => u.id),
+              type: NotificationType.SYSTEM_ALERT,
+              title: 'Erro na renovação automática',
+              message: `Falha ao renovar ${empresa}: ${error.message}`,
+              link: '/clients',
+            }).catch(() => {});
+          }
+        }).catch(() => {});
       }
     }
 
     this.logger.log('🔄 [CRON] Renovação concluída');
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // CRON: ALERTA DE COBRANÇA PRÓXIMA (todo dia às 08:00 UTC = 05:00 BRT)
+  // ══════════════════════════════════════════════════════════════
+
+  @Cron('0 8 * * *', { name: 'upcoming-billing-notification' }) // 08:00 UTC = 05:00 BRT
+  async handleUpcomingBillingNotification() {
+    this.logger.log('🔔 [CRON] Verificando cobranças próximas...');
+
+    const today = nowBrasilia();
+    today.setHours(0, 0, 0, 0);
+
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const sevenDaysLater = new Date(today);
+    sevenDaysLater.setDate(sevenDaysLater.getDate() + 7);
+    sevenDaysLater.setHours(23, 59, 59, 999);
+
+    // Subscriptions ativas com cobrança nos próximos 7 dias (excluindo hoje)
+    const upcomingSubs = await this.prisma.subscription.findMany({
+      where: {
+        status: 'ACTIVE',
+        nextBillingDate: {
+          gte: tomorrow,
+          lte: sevenDaysLater,
+        },
+      },
+      include: {
+        client: true,
+        plan: true,
+      },
+    });
+
+    this.logger.log(`📋 ${upcomingSubs.length} assinaturas com cobrança próxima (7 dias)`);
+
+    for (const sub of upcomingSubs) {
+      if (!sub.client?.vendedorId) continue;
+
+      const daysUntil = daysBetween(today, new Date(sub.nextBillingDate!));
+      const empresa = sub.client.company || sub.client.contactName || sub.clientId;
+      const valor = Number(sub.amount).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+      const planName = sub.plan?.name || 'Plano';
+
+      this.notificationsService.create({
+        userId: sub.client.vendedorId,
+        type: NotificationType.SUBSCRIPTION_EXPIRING,
+        title: `Cobrança em ${daysUntil} dia(s)`,
+        message: `${empresa} tem cobrança de ${valor} (${planName}) em ${daysUntil} dia(s).`,
+        link: '/clients',
+        metadata: {
+          clientId: sub.clientId,
+          subscriptionId: sub.id,
+          daysUntil,
+          amount: Number(sub.amount),
+        },
+        dedupeKey: sub.id,    // throttle: 1 alerta por assinatura por 24h
+        throttleHours: 24,
+      }).catch(() => {});
+    }
+
+    this.logger.log('🔔 [CRON] Alertas de cobrança próxima concluídos');
   }
 
   // ══════════════════════════════════════════════════════════════
@@ -367,6 +451,21 @@ export class SubscriptionService implements OnModuleInit {
           if (ft.clientId) {
             await this.tenantsService.syncStatusToOneNexus(ft.clientId, 'canceled');
           }
+
+          // ✅ v2.58.0: Notificar vendedor sobre cancelamento por inadimplência
+          if (ft.client?.vendedorId) {
+            const empresa = ft.client?.company || ft.client?.contactName || ft.clientId;
+            this.notificationsService.create({
+              userId: ft.client.vendedorId,
+              type: NotificationType.PAYMENT_OVERDUE,
+              title: 'Assinatura cancelada por inadimplência',
+              message: `${empresa} foi cancelado após ${daysOverdue} dias sem pagamento.`,
+              link: '/clients',
+              metadata: { clientId: ft.clientId, daysOverdue, subscriptionId: ft.subscriptionId },
+              dedupeKey: `cancel-${ft.clientId}`,  // 1 alerta de cancelamento por cliente
+              throttleHours: 48,
+            }).catch(() => {});
+          }
         } else if (daysOverdue > 0) {
           // ════════════════════════════════════════════
           // DENTRO DO GRACE PERIOD → INADIMPLENTE
@@ -403,9 +502,55 @@ export class SubscriptionService implements OnModuleInit {
           if (ft.clientId) {
             await this.tenantsService.syncStatusToOneNexus(ft.clientId, 'suspended');
           }
+
+          // ✅ v2.58.0: Notificar vendedor sobre inadimplência
+          if (ft.client?.vendedorId) {
+            const empresa = ft.client?.company || ft.client?.contactName || ft.clientId;
+            this.notificationsService.create({
+              userId: ft.client.vendedorId,
+              type: NotificationType.PAYMENT_OVERDUE,
+              title: 'Cliente inadimplente',
+              message: `${empresa} está ${daysOverdue} dia(s) sem pagamento. Prazo: ${gracePeriod} dias.`,
+              link: '/clients',
+              metadata: { clientId: ft.clientId, daysOverdue, gracePeriod },
+              dedupeKey: `overdue-${ft.clientId}`,  // 1 alerta por cliente por 24h
+              throttleHours: 24,
+            }).catch(() => {});
+
+            // ✅ v2.58.0: AI_CHURN_ALERT no primeiro dia — alerta proativo de risco de churn
+            if (daysOverdue === 1) {
+              this.notificationsService.create({
+                userId: ft.client.vendedorId,
+                type: NotificationType.AI_CHURN_ALERT,
+                title: 'Risco de churn detectado',
+                message: `${empresa} iniciou período de inadimplência. Contato preventivo pode evitar cancelamento.`,
+                link: '/clients',
+                metadata: { clientId: ft.clientId, gracePeriod, daysUntilCancel: gracePeriod },
+                dedupeKey: ft.clientId ?? undefined,  // 1 churn alert por cliente por 7 dias
+                throttleHours: 168,
+              }).catch(() => {});
+            }
+          }
         }
       } catch (error) {
         this.logger.error(`❌ [CRON overdue] Erro processando ${ft.id}: ${error.message}`);
+
+        // ✅ v2.60.0: Notificar admins sobre falha no overdue detection
+        const empresa = ft.client?.company || ft.id;
+        this.prisma.user.findMany({
+          where: { role: { in: ['SUPERADMIN', 'ADMINISTRATIVO'] } },
+          select: { id: true },
+        }).then((admins) => {
+          if (admins.length > 0) {
+            this.notificationsService.createBulk({
+              userIds: admins.map((u) => u.id),
+              type: NotificationType.SYSTEM_ALERT,
+              title: 'Erro na detecção de atrasos',
+              message: `Falha ao processar inadimplência de ${empresa}: ${error.message}`,
+              link: '/finance',
+            }).catch(() => {});
+          }
+        }).catch(() => {});
       }
     }
 

@@ -1,7 +1,8 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { TenantsService } from '../tenants/tenants.service';
-import { Prisma } from '@prisma/client';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationType, Prisma } from '@prisma/client';
 import {
   CreateTransactionDto,
   UpdateTransactionDto,
@@ -21,6 +22,7 @@ export class FinanceService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly tenantsService: TenantsService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   // ════════════════════════════════════════════════════════════════
@@ -184,6 +186,21 @@ export class FinanceService {
 
     const formatted = this.format(t);
     this.logger.log(`[markAsPaid] Status calculado retornado: ${formatted.status}`);
+
+    // ✅ v2.58.0: Notificar vendedor do cliente sobre pagamento recebido
+    const vendedorId = (t as any).client?.vendedor?.id;
+    if (vendedorId) {
+      const valor = Number(t.amount).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+      const empresa = (t as any).client?.company || (t as any).client?.contactName || 'Cliente';
+      this.notificationsService.create({
+        userId: vendedorId,
+        type: NotificationType.PAYMENT_RECEIVED,
+        title: 'Pagamento recebido',
+        message: `${empresa} efetuou um pagamento de ${valor}.`,
+        link: '/finance',
+        metadata: { transactionId: t.id, clientId: t.clientId },
+      }).catch(() => {});
+    }
 
     return formatted;
   }

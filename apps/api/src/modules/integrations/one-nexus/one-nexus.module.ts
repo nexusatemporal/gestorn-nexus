@@ -5,7 +5,10 @@ import { OneNexusService } from './one-nexus.service';
 
 @Module({
   imports: [
-    HttpModule.register({ timeout: 15000 }),
+    HttpModule.register({
+      timeout: 15000,
+      maxRedirects: 3,
+    }),
     ConfigModule,
   ],
   providers: [OneNexusService],

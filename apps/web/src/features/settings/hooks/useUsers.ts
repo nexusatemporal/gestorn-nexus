@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { settingsApi, CreateUserDto, UpdateUserDto } from '../api/settings.api';
 
 /**
@@ -42,10 +43,10 @@ export const useCreateUser = () => {
     mutationFn: (dto: CreateUserDto) => settingsApi.createUser(dto),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
-      // Toast será adicionado quando sonner estiver disponível
+      toast.success('Usuário criado com sucesso!');
     },
     onError: (error: any) => {
-      console.error('Erro ao criar usuário:', error);
+      toast.error(error?.response?.data?.message || 'Erro ao criar usuário');
     },
   });
 };
@@ -62,43 +63,78 @@ export const useUpdateUser = () => {
     onSuccess: (_, { id }) => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
       queryClient.invalidateQueries({ queryKey: ['users', id] });
+      toast.success('Usuário atualizado com sucesso!');
     },
     onError: (error: any) => {
-      console.error('Erro ao atualizar usuário:', error);
+      toast.error(error?.response?.data?.message || 'Erro ao atualizar usuário');
     },
   });
 };
 
 /**
- * Hook para desativar usuário
+ * Hook para excluir usuário permanentemente
  */
-export const useDeactivateUser = () => {
+export const useDeleteUser = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (id: string) => settingsApi.deactivateUser(id),
+    mutationFn: (id: string) => settingsApi.deleteUser(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
+      toast.success('Usuário excluído permanentemente.');
     },
     onError: (error: any) => {
-      console.error('Erro ao desativar usuário:', error);
+      toast.error(error?.response?.data?.message || 'Erro ao excluir usuário');
     },
   });
 };
 
 /**
- * Hook para reativar usuário
+ * Hook para reenviar email de boas-vindas
  */
-export const useRestoreUser = () => {
+export const useResendEmail = () => {
+  return useMutation({
+    mutationFn: (id: string) => settingsApi.resendEmail(id),
+    onSuccess: () => {
+      toast.success('Email de boas-vindas reenviado!');
+    },
+    onError: (error: any) => {
+      toast.error(error?.response?.data?.message || 'Erro ao reenviar email');
+    },
+  });
+};
+
+/**
+ * Hook para atualizar perfil do usuário logado
+ */
+export const useUpdateProfile = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (id: string) => settingsApi.restoreUser(id),
+    mutationFn: (dto: UpdateUserDto) => settingsApi.updateProfile(dto),
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users', 'me'] });
       queryClient.invalidateQueries({ queryKey: ['users'] });
+      toast.success('Perfil atualizado com sucesso!');
     },
     onError: (error: any) => {
-      console.error('Erro ao reativar usuário:', error);
+      toast.error(error?.response?.data?.message || 'Erro ao atualizar perfil');
+    },
+  });
+};
+
+/**
+ * Hook para alterar senha
+ */
+export const useChangePassword = () => {
+  return useMutation({
+    mutationFn: ({ id, currentPassword, newPassword }: { id: string; currentPassword: string; newPassword: string }) =>
+      settingsApi.changePassword(id, currentPassword, newPassword),
+    onSuccess: () => {
+      toast.success('Senha alterada com sucesso!');
+    },
+    onError: (error: any) => {
+      toast.error(error?.response?.data?.message || 'Erro ao alterar senha');
     },
   });
 };

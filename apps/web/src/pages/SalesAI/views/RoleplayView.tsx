@@ -28,16 +28,16 @@ export function RoleplayView({ leadContext }: RoleplayViewProps) {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto p-10 custom-scrollbar">
-      <div className="max-w-3xl mx-auto space-y-8">
+    <div className="flex-1 overflow-y-auto p-4 md:p-10 custom-scrollbar">
+      <div className="max-w-3xl mx-auto space-y-6 md:space-y-8">
         {/* Header */}
-        <div className="text-center space-y-4">
+        <div className="text-center space-y-3 md:space-y-4">
           <div className="flex justify-center">
-            <div className="p-4 bg-orange-500/10 text-orange-500 rounded-full">
-              <Users size={48} />
+            <div className="p-3 md:p-4 bg-orange-500/10 text-orange-500 rounded-full">
+              <Users size={28} className="md:w-12 md:h-12" />
             </div>
           </div>
-          <h2 className={`text-2xl font-black ${isDark ? 'text-white' : 'text-zinc-900'}`}>
+          <h2 className={`text-lg md:text-2xl font-black ${isDark ? 'text-white' : 'text-zinc-900'}`}>
             Simulador de Vendas IA
           </h2>
           <p className="text-sm text-zinc-500">
@@ -46,9 +46,9 @@ export function RoleplayView({ leadContext }: RoleplayViewProps) {
         </div>
 
         {/* Configuration */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
           {/* Scenario Selector */}
-          <div className={`p-6 rounded-2xl border ${isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-zinc-50 border-zinc-200'}`}>
+          <div className={`p-4 md:p-6 rounded-2xl border ${isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-zinc-50 border-zinc-200'}`}>
             <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-3 block">
               Cenário
             </label>
@@ -66,7 +66,7 @@ export function RoleplayView({ leadContext }: RoleplayViewProps) {
           </div>
 
           {/* Difficulty Selector */}
-          <div className={`p-6 rounded-2xl border ${isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-zinc-50 border-zinc-200'}`}>
+          <div className={`p-4 md:p-6 rounded-2xl border ${isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-zinc-50 border-zinc-200'}`}>
             <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-3 block">
               Dificuldade
             </label>
@@ -90,7 +90,7 @@ export function RoleplayView({ leadContext }: RoleplayViewProps) {
         </div>
 
         {/* Info */}
-        <div className={`p-6 rounded-2xl border ${isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-zinc-50 border-zinc-200'}`}>
+        <div className={`p-4 md:p-6 rounded-2xl border ${isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-zinc-50 border-zinc-200'}`}>
           <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-600 mb-3">
             Pressione Enter para Começar
           </p>

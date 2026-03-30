@@ -1,4 +1,28 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
+import { useSearchParams } from 'react-router-dom';
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  useDroppable,
+  useDraggable,
+  defaultDropAnimationSideEffects,
+} from '@dnd-kit/core';
+import type { DragStartEvent, DragEndEvent } from '@dnd-kit/core';
+import { CSS } from '@dnd-kit/utilities';
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+  arrayMove,
+} from '@dnd-kit/sortable';
+import {
+  closestCenter,
+  TouchSensor as DndTouchSensor,
+} from '@dnd-kit/core';
 import {
   Plus,
   Search,
@@ -22,7 +46,10 @@ import {
   History,
   Send,
   ChevronUp,
-  Briefcase
+  ChevronLeft,
+  ChevronRight,
+  Briefcase,
+  GripVertical
 } from 'lucide-react';
 import { useUIStore } from '@/stores/useUIStore';
 import {
@@ -46,6 +73,7 @@ import { CityCombobox } from './components/CityCombobox';
 import { ConvertLeadModal } from './components/ConvertLeadModal';
 import { LeadScoreBadge } from './components/LeadScoreBadge';
 import { leadsApi } from './services/leads.api';
+import { toast } from 'sonner';
 
 /**
  * ══════════════════════════════════════════════════════════════════════════
@@ -89,6 +117,7 @@ interface Lead {
   assignedTo: string;
   vendedorId?: string; // ✅ v2.30.0: UUID for vendedor relation
   daysInStage: number;
+  updatedAt: string;
   notes: string[];
   interactions: Interaction[];
   instagram?: string;
@@ -98,6 +127,20 @@ interface Lead {
 // ═══════════════════════════════════════════════════════════════════════════
 // CONSTANTES
 // ═══════════════════════════════════════════════════════════════════════════
+
+// Paleta de cores para stages do funil (usado no dropdown mobile e kanban headers)
+const STAGE_COLORS = [
+  '#3B82F6', // blue-500 — 1º estágio
+  '#F59E0B', // amber-500 — 2º estágio
+  '#8B5CF6', // violet-500 — 3º estágio
+  '#10B981', // emerald-500 — 4º estágio
+  '#EC4899', // pink-500 — 5º estágio
+  '#F97316', // orange-500 — 6º estágio
+  '#14B8A6', // teal-500 — 7º estágio
+  '#E11D48', // rose-600 — 8º estágio
+];
+const STAGE_COLOR_GANHO = '#22C55E'; // green-500
+const STAGE_COLOR_PERDIDO = '#EF4444'; // red-500
 
 const ROLES = [
   "Sócio ou Fundador",
@@ -263,9 +306,11 @@ const LeadFormModal: React.FC<{
   useEffect(() => {
     if (lead) {
       // ✅ v2.37.2: Aplicar formatação de telefone ao carregar lead para edição
+      // ✅ v2.69.3: Aplicar formatação de CNPJ ao carregar lead para edição
       setFormData({
         ...lead,
-        phone: formatPhoneForDisplay(lead.phone), // Formata telefone para exibição
+        phone: formatPhoneForDisplay(lead.phone),
+        cnpj: lead.cnpj ? formatCnpj(lead.cnpj) : lead.cnpj,
       });
     } else {
       // Modal de criação: valores padrão
@@ -460,12 +505,12 @@ const LeadFormModal: React.FC<{
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
-      <div className={`${isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200 shadow-2xl'} border w-full max-w-6xl h-[92vh] rounded-3xl overflow-hidden shadow-2xl flex flex-col`}>
+  return createPortal(
+    <div className="fixed inset-0 z-[200] flex items-end md:items-center md:justify-center bg-black/60 backdrop-blur-sm animate-in fade-in" onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} className={`${isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200 shadow-2xl'} border w-full max-w-full md:max-w-6xl max-h-[calc(100%-1rem)] md:max-h-[92vh] md:h-auto rounded-t-2xl md:rounded-3xl overflow-hidden shadow-2xl flex flex-col`}>
 
         {/* Header */}
-        <div className={`p-6 border-b ${isDark ? 'border-zinc-800' : 'border-zinc-200'} flex justify-between items-center bg-zinc-50/50 dark:bg-zinc-800/30`}>
+        <div className={`p-4 md:p-6 border-b shrink-0 ${isDark ? 'border-zinc-800' : 'border-zinc-200'} flex justify-between items-center bg-zinc-50/50 dark:bg-zinc-800/30`}>
           <div className="flex items-center gap-3">
              <div className="p-2 bg-nexus-orange/10 rounded-xl text-nexus-orange">
                 <Briefcase size={24} />
@@ -480,16 +525,16 @@ const LeadFormModal: React.FC<{
 
         <div className="flex-1 flex overflow-hidden">
           {/* Main Form Area */}
-          <div className="flex-1 overflow-y-auto p-8 scrollbar-thin">
+          <div className="flex-1 overflow-y-auto p-4 md:p-8 pb-8 md:pb-8 scrollbar-thin">
             <form id="leadForm" onSubmit={handleSubmit} className="space-y-10">
 
               {/* Seção 1: Dados Pessoais & Contato */}
               <section>
-                <div className="flex items-center gap-2 mb-6 border-b border-zinc-800/10 dark:border-zinc-800 pb-2">
+                <div className="flex items-center gap-2 mb-3 md:mb-6 border-b border-zinc-800/10 dark:border-zinc-800 pb-2">
                   <User size={16} className="text-nexus-orange" />
                   <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Responsável & Contato</h3>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-6">
                   <div className="space-y-1">
                     <label className="block text-[10px] font-bold text-zinc-500 uppercase ml-1">
                       Nome Completo
@@ -497,7 +542,7 @@ const LeadFormModal: React.FC<{
                     <input
                       required
                       name="name"
-                      className={`w-full rounded-xl px-4 py-2.5 text-sm border focus:ring-2 focus:ring-nexus-orange/20 outline-none transition-all ${
+                      className={`w-full rounded-xl px-4 py-3 md:py-2.5 text-base md:text-sm border focus:ring-2 focus:ring-nexus-orange/20 outline-none transition-all ${
                         errors.name
                           ? 'border-red-500 bg-red-500/5'
                           : isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-zinc-300'
@@ -524,7 +569,7 @@ const LeadFormModal: React.FC<{
                       required
                       type="email"
                       name="email"
-                      className={`w-full rounded-xl px-4 py-2.5 text-sm border focus:ring-2 focus:ring-nexus-orange/20 outline-none transition-all ${
+                      className={`w-full rounded-xl px-4 py-3 md:py-2.5 text-base md:text-sm border focus:ring-2 focus:ring-nexus-orange/20 outline-none transition-all ${
                         errors.email
                           ? 'border-red-500 bg-red-500/5'
                           : isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-zinc-300'
@@ -551,7 +596,7 @@ const LeadFormModal: React.FC<{
                       required
                       name="phone"
                       type="tel"
-                      className={`w-full rounded-xl px-4 py-2.5 text-sm border focus:ring-2 focus:ring-nexus-orange/20 outline-none transition-all ${
+                      className={`w-full rounded-xl px-4 py-3 md:py-2.5 text-base md:text-sm border focus:ring-2 focus:ring-nexus-orange/20 outline-none transition-all ${
                         errors.phone
                           ? 'border-red-500 bg-red-500/5'
                           : isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-zinc-300'
@@ -575,18 +620,18 @@ const LeadFormModal: React.FC<{
                   </div>
                   <div className="space-y-1">
                     <label className="block text-[10px] font-bold text-zinc-500 uppercase ml-1">Instagram</label>
-                    <input className={`w-full rounded-xl px-4 py-2.5 text-sm border focus:ring-2 focus:ring-nexus-orange/20 outline-none transition-all ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-zinc-300'}`} value={formData.instagram || ''} onChange={e => setFormData({...formData, instagram: e.target.value})} placeholder="@usuario" />
+                    <input className={`w-full rounded-xl px-4 py-3 md:py-2.5 text-base md:text-sm border focus:ring-2 focus:ring-nexus-orange/20 outline-none transition-all ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-zinc-300'}`} value={formData.instagram || ''} onChange={e => setFormData({...formData, instagram: e.target.value})} placeholder="@usuario" />
                   </div>
                   <div className="space-y-1">
                     <label className="block text-[10px] font-bold text-zinc-500 uppercase ml-1">Facebook</label>
-                    <input className={`w-full rounded-xl px-4 py-2.5 text-sm border focus:ring-2 focus:ring-nexus-orange/20 outline-none transition-all ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-zinc-300'}`} value={formData.facebook || ''} onChange={e => setFormData({...formData, facebook: e.target.value})} placeholder="usuario.facebook" />
+                    <input className={`w-full rounded-xl px-4 py-3 md:py-2.5 text-base md:text-sm border focus:ring-2 focus:ring-nexus-orange/20 outline-none transition-all ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-zinc-300'}`} value={formData.facebook || ''} onChange={e => setFormData({...formData, facebook: e.target.value})} placeholder="usuario.facebook" />
                   </div>
                   <div className="space-y-1">
                     <label className="block text-[10px] font-bold text-zinc-500 uppercase ml-1">Cargo</label>
                     <select
                       required
                       name="role"
-                      className={`w-full rounded-xl px-4 py-2.5 text-sm border focus:ring-2 focus:ring-nexus-orange/20 outline-none transition-all ${
+                      className={`w-full rounded-xl px-4 py-3 md:py-2.5 text-base md:text-sm border focus:ring-2 focus:ring-nexus-orange/20 outline-none transition-all ${
                         errors.role
                           ? 'border-red-500 bg-red-500/5'
                           : isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-zinc-300'
@@ -618,11 +663,11 @@ const LeadFormModal: React.FC<{
 
               {/* Seção 2: Dados da Empresa */}
               <section>
-                <div className="flex items-center gap-2 mb-6 border-b border-zinc-800/10 dark:border-zinc-800 pb-2">
+                <div className="flex items-center gap-2 mb-3 md:mb-6 border-b border-zinc-800/10 dark:border-zinc-800 pb-2">
                   <Building2 size={16} className="text-nexus-orange" />
                   <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Dados da Clínica / Empresa</h3>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-6">
                   <div className="space-y-1">
                     <label className="block text-[10px] font-bold text-zinc-500 uppercase ml-1">
                       Nome da Clínica
@@ -630,7 +675,7 @@ const LeadFormModal: React.FC<{
                     <input
                       required
                       name="clinic"
-                      className={`w-full rounded-xl px-4 py-2.5 text-sm border focus:ring-2 focus:ring-nexus-orange/20 outline-none transition-all ${
+                      className={`w-full rounded-xl px-4 py-3 md:py-2.5 text-base md:text-sm border focus:ring-2 focus:ring-nexus-orange/20 outline-none transition-all ${
                         errors.clinic
                           ? 'border-red-500 bg-red-500/5'
                           : isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-zinc-300'
@@ -654,7 +699,7 @@ const LeadFormModal: React.FC<{
                     <input
                       required
                       name="cnpj"
-                      className={`w-full rounded-xl px-4 py-2.5 text-sm border focus:ring-2 focus:ring-nexus-orange/20 outline-none transition-all ${
+                      className={`w-full rounded-xl px-4 py-3 md:py-2.5 text-base md:text-sm border focus:ring-2 focus:ring-nexus-orange/20 outline-none transition-all ${
                         errors.cnpj
                           ? 'border-red-500 bg-red-500/5'
                           : isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-zinc-300'
@@ -684,7 +729,7 @@ const LeadFormModal: React.FC<{
                       type="number"
                       min="1"
                       name="numberOfUnits"
-                      className={`w-full rounded-xl px-4 py-2.5 text-sm border focus:ring-2 focus:ring-nexus-orange/20 outline-none transition-all ${
+                      className={`w-full rounded-xl px-4 py-3 md:py-2.5 text-base md:text-sm border focus:ring-2 focus:ring-nexus-orange/20 outline-none transition-all ${
                         errors.numberOfUnits
                           ? 'border-red-500 bg-red-500/5'
                           : isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-zinc-300'
@@ -707,15 +752,15 @@ const LeadFormModal: React.FC<{
 
               {/* Seção 3: Pipeline & Comercial */}
               <section>
-                <div className="flex items-center gap-2 mb-6 border-b border-zinc-800/10 dark:border-zinc-800 pb-2">
+                <div className="flex items-center gap-2 mb-3 md:mb-6 border-b border-zinc-800/10 dark:border-zinc-800 pb-2">
                   <TrendingUp size={16} className="text-nexus-orange" />
                   <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Informações Comerciais</h3>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-6">
                   <div className="space-y-1">
                     <label className="block text-[10px] font-bold text-zinc-500 uppercase ml-1">Estágio Atual</label>
                     <select
-                      className={`w-full rounded-xl px-4 py-2.5 text-sm border focus:ring-2 focus:ring-nexus-orange/20 outline-none transition-all ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-zinc-300'}`}
+                      className={`w-full rounded-xl px-4 py-3 md:py-2.5 text-base md:text-sm border focus:ring-2 focus:ring-nexus-orange/20 outline-none transition-all ${isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-zinc-300'}`}
                       value={formData.stage}
                       onChange={e => {
                         // ✅ CORREÇÃO v2.24.0: Interceptar mudança para "Ganho" e abrir modal de trava inteligente
@@ -739,7 +784,7 @@ const LeadFormModal: React.FC<{
                     <select
                       required
                       name="interestPlan"
-                      className={`w-full rounded-xl px-4 py-2.5 text-sm border focus:ring-2 focus:ring-nexus-orange/20 outline-none transition-all ${
+                      className={`w-full rounded-xl px-4 py-3 md:py-2.5 text-base md:text-sm border focus:ring-2 focus:ring-nexus-orange/20 outline-none transition-all ${
                         errors.interestPlan
                           ? 'border-red-500 bg-red-500/5'
                           : isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-zinc-300'
@@ -764,7 +809,7 @@ const LeadFormModal: React.FC<{
                     <select
                       required
                       name="assignedTo"
-                      className={`w-full rounded-xl px-4 py-2.5 text-sm border focus:ring-2 focus:ring-nexus-orange/20 outline-none transition-all ${
+                      className={`w-full rounded-xl px-4 py-3 md:py-2.5 text-base md:text-sm border focus:ring-2 focus:ring-nexus-orange/20 outline-none transition-all ${
                         errors.assignedTo
                           ? 'border-red-500 bg-red-500/5'
                           : isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-zinc-300'
@@ -789,7 +834,7 @@ const LeadFormModal: React.FC<{
                     <select
                       required
                       name="origin"
-                      className={`w-full rounded-xl px-4 py-2.5 text-sm border focus:ring-2 focus:ring-nexus-orange/20 outline-none transition-all ${
+                      className={`w-full rounded-xl px-4 py-3 md:py-2.5 text-base md:text-sm border focus:ring-2 focus:ring-nexus-orange/20 outline-none transition-all ${
                         errors.origin
                           ? 'border-red-500 bg-red-500/5'
                           : isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-zinc-300'
@@ -830,7 +875,7 @@ const LeadFormModal: React.FC<{
           </div>
 
           {/* Sidebar: History & Notes */}
-          <aside className={`w-[400px] border-l flex flex-col overflow-hidden ${isDark ? 'bg-zinc-900/50 border-zinc-800' : 'bg-zinc-50/50 border-zinc-200'}`}>
+          <aside className={`hidden md:flex w-[400px] border-l flex-col overflow-hidden ${isDark ? 'bg-zinc-900/50 border-zinc-800' : 'bg-zinc-50/50 border-zinc-200'}`}>
             <div className={`p-6 border-b ${isDark ? 'border-zinc-800' : 'border-zinc-200'} bg-zinc-900/10`}>
               <h3 className={`text-xs font-bold uppercase tracking-widest flex items-center gap-2 mb-4 ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>
                 <History size={16} className="text-nexus-orange"/> Linha do Tempo
@@ -882,8 +927,35 @@ const LeadFormModal: React.FC<{
         </div>
 
         {/* Footer Actions */}
-        <div className={`p-8 border-t flex flex-wrap gap-4 items-center justify-between ${isDark ? 'bg-zinc-950 border-zinc-800' : 'bg-zinc-50 border-zinc-200'}`}>
-          <div className="flex gap-4">
+        <div className={`p-3 md:p-8 border-t shrink-0 flex flex-col md:flex-row md:flex-wrap gap-2 md:gap-4 items-stretch md:items-center md:justify-between ${isDark ? 'bg-zinc-950 border-zinc-800' : 'bg-zinc-50 border-zinc-200'}`}>
+          {/* Primary CTA — first on mobile (visual hierarchy) */}
+          <div className="flex flex-col md:flex-row gap-2 md:gap-4 md:order-2 md:ml-auto">
+            <button
+              type="button"
+              onClick={() => {
+                if (lead?.status === LeadStatus.GANHO) {
+                  alert('❌ Não é possível editar Lead convertido. Mova para PERDIDO primeiro.');
+                  return;
+                }
+                const form = document.getElementById('leadForm') as HTMLFormElement;
+                if (form) form.requestSubmit();
+              }}
+              className="w-full md:w-auto px-10 py-3 md:py-2.5 rounded-xl text-sm font-bold transition-all shadow-xl bg-nexus-orange text-white hover:bg-nexus-orangeDark shadow-nexus-orange/20 active:scale-95"
+            >
+              {lead ? 'Salvar Ficha' : 'Criar Lead'}
+            </button>
+            {lead && lead.stage !== 'Ganho' && (
+              <button
+                type="button"
+                onClick={() => onConvert?.(lead)}
+                className="w-full md:w-auto px-8 py-3 md:py-2.5 bg-green-600 text-white rounded-xl text-sm font-bold hover:bg-green-700 transition-all shadow-xl shadow-green-600/20 flex items-center justify-center gap-2 active:scale-95"
+              >
+                <UserPlus size={18} /> Converter em Cliente
+              </button>
+            )}
+          </div>
+          {/* Secondary actions */}
+          <div className="flex gap-2 md:gap-4 md:order-1">
             {lead && (
               <>
                 <button
@@ -895,42 +967,16 @@ const LeadFormModal: React.FC<{
                     }
                     onDelete?.(lead.id);
                   }}
-                  className="flex items-center gap-2 px-4 py-2.5 font-bold text-sm transition-all rounded-xl text-zinc-500 hover:text-red-500 bg-red-500/0 hover:bg-red-500/10"
+                  className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 font-bold text-sm transition-all rounded-xl text-zinc-500 hover:text-red-500 hover:bg-red-500/10"
                 >
-                  <Trash2 size={18}/> Excluir Lead
+                  <Trash2 size={16}/> <span className="hidden md:inline">Excluir Lead</span><span className="md:hidden">Excluir</span>
                 </button>
-                <button type="button" onClick={() => setShowLossReason(true)} className="flex items-center gap-2 px-4 py-2.5 text-zinc-500 hover:text-orange-500 font-bold text-sm transition-all bg-orange-500/0 hover:bg-orange-500/10 rounded-xl">
-                  <XCircle size={18}/> Marcar Perdido
+                <button type="button" onClick={() => setShowLossReason(true)} className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 text-zinc-500 hover:text-orange-500 font-bold text-sm transition-all hover:bg-orange-500/10 rounded-xl">
+                  <XCircle size={16}/> <span className="hidden md:inline">Marcar Perdido</span><span className="md:hidden">Perdido</span>
                 </button>
               </>
             )}
-          </div>
-          <div className="flex gap-4">
-            <button type="button" onClick={onClose} className="px-6 py-2.5 text-zinc-500 text-sm font-bold hover:text-zinc-900 transition-colors">Cancelar</button>
-            {lead && lead.stage !== 'Ganho' && (
-              <button
-                type="button"
-                onClick={() => onConvert?.(lead)}
-                className="px-8 py-2.5 bg-green-600 text-white rounded-xl text-sm font-bold hover:bg-green-700 transition-all shadow-xl shadow-green-600/20 flex items-center gap-2 active:scale-95"
-              >
-                <UserPlus size={18} /> Converter em Cliente
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => {
-                if (lead?.status === LeadStatus.GANHO) {
-                  alert('❌ Não é possível editar Lead convertido. Mova para PERDIDO primeiro.');
-                  return;
-                }
-                // Disparar submit do form manualmente
-                const form = document.getElementById('leadForm') as HTMLFormElement;
-                if (form) form.requestSubmit();
-              }}
-              className="px-10 py-2.5 rounded-xl text-sm font-bold transition-all shadow-xl bg-nexus-orange text-white hover:bg-nexus-orangeDark shadow-nexus-orange/20 active:scale-95"
-            >
-              {lead ? 'Salvar Ficha' : 'Criar Lead'}
-            </button>
+            <button type="button" onClick={onClose} className="flex-1 md:flex-none px-6 py-2.5 text-zinc-500 text-sm font-bold hover:text-zinc-900 transition-colors text-center">Cancelar</button>
           </div>
         </div>
       </div>
@@ -960,6 +1006,74 @@ const LeadFormModal: React.FC<{
            </div>
         </div>
       )}
+    </div>,
+    document.body
+  );
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// COMPONENTE: SortableStageItem (drag-to-reorder no pipeline config)
+// ═══════════════════════════════════════════════════════════════════════════
+
+const SortableStageItem: React.FC<{
+  stage: string;
+  idx: number;
+  total: number;
+  isDark: boolean;
+  onMove: (index: number, direction: 'up' | 'down') => void;
+  onRemove: (stageName: string) => void;
+}> = ({ stage, idx, total, isDark, onMove, onRemove }) => {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: stage });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 50 : undefined,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`flex items-center gap-3 md:gap-4 p-4 rounded-2xl border transition-all ${isDark ? 'bg-zinc-800/50 border-zinc-700 hover:bg-zinc-800' : 'bg-zinc-50 border-zinc-200 hover:bg-white hover:shadow-sm'} ${isDragging ? 'shadow-xl' : ''}`}
+    >
+      {/* Drag handle — touch-friendly */}
+      <button
+        className="touch-none cursor-grab active:cursor-grabbing text-zinc-400 hover:text-nexus-orange p-1 -ml-1 transition-colors"
+        {...attributes}
+        {...listeners}
+      >
+        <GripVertical size={18} />
+      </button>
+      {/* Up/Down buttons — fallback, hidden on mobile onde drag funciona */}
+      <div className="hidden md:flex flex-col gap-1">
+        <button
+          disabled={idx === 0}
+          onClick={() => onMove(idx, 'up')}
+          className="text-zinc-500 hover:text-nexus-orange disabled:opacity-20 disabled:hover:text-zinc-500 transition-colors"
+        >
+          <ChevronUp size={16} />
+        </button>
+        <button
+          disabled={idx === total - 1}
+          onClick={() => onMove(idx, 'down')}
+          className="text-zinc-500 hover:text-nexus-orange disabled:opacity-20 disabled:hover:text-zinc-500 transition-colors"
+        >
+          <ChevronDown size={16} />
+        </button>
+      </div>
+      <span className={`text-sm font-bold flex-1 ${isDark ? 'text-zinc-100' : 'text-zinc-700'}`}>{stage}</span>
+      <button onClick={() => onRemove(stage)} className="text-zinc-400 hover:text-red-500 p-2 transition-colors">
+        <Trash2 size={18}/>
+      </button>
     </div>
   );
 };
@@ -978,6 +1092,12 @@ const StageManager: React.FC<{
   const [currentStages, setCurrentStages] = useState([...stages]);
   const [newStageName, setNewStageName] = useState('');
 
+  // Sensors para dnd-kit sortable (pointer + touch)
+  const sortableSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(DndTouchSensor, { activationConstraint: { delay: 150, tolerance: 5 } })
+  );
+
   // Mutations para CRUD de estágios
   const createMutation = useCreateFunnelStage();
   const deleteMutation = useDeleteFunnelStage();
@@ -989,7 +1109,7 @@ const StageManager: React.FC<{
 
   const handleAdd = () => {
     if (!newStageName.trim()) {
-      window.alert('⚠️ Digite um nome para o estágio.');
+      toast.warning('Digite um nome para o estágio.');
       return;
     }
 
@@ -999,7 +1119,7 @@ const StageManager: React.FC<{
     );
 
     if (exists) {
-      window.alert('⚠️ Já existe um estágio com esse nome.');
+      toast.warning('Já existe um estágio com esse nome.');
       return;
     }
 
@@ -1011,16 +1131,15 @@ const StageManager: React.FC<{
       {
         name: newStageName.trim(),
         order: maxOrder + 1,
-        color: '#FF7300', // Cor padrão Nexus orange
+        color: '#FF7300',
         isActive: true,
       },
       {
         onSuccess: () => {
           setNewStageName('');
-          // currentStages será atualizado automaticamente via invalidateQueries
         },
         onError: () => {
-          window.alert('❌ Erro ao adicionar estágio. Verifique se o nome já existe.');
+          toast.error('Erro ao adicionar estágio. Verifique se o nome já existe.');
         },
       }
     );
@@ -1031,32 +1150,34 @@ const StageManager: React.FC<{
     const stage = funnelStages.find(s => s.name === stageName);
 
     if (!stage) {
-      window.alert('⚠️ Estágio não encontrado.');
+      toast.warning('Estágio não encontrado.');
       return;
     }
 
     // Verificar se há leads vinculados
     if (stage._count && stage._count.leads > 0) {
-      window.alert(
-        `⚠️ Não é possível remover estágio com ${stage._count.leads} lead(s) vinculado(s).\n\n` +
-        `Mova os leads para outro estágio antes de remover.`
+      toast.error(
+        `Não é possível remover estágio com ${stage._count.leads} lead(s) vinculado(s). Mova os leads primeiro.`
       );
       return;
     }
 
-    // Confirmação do usuário
-    if (!window.confirm(`🗑️ Tem certeza que deseja remover o estágio "${stageName}"?`)) {
-      return;
-    }
-
-    // Deletar estágio via API
-    deleteMutation.mutate(stage.id, {
-      onSuccess: () => {
-        // currentStages será atualizado automaticamente via invalidateQueries
+    // Deletar estágio via API (sem confirmação bloqueante)
+    toast(`Remover estágio "${stageName}"?`, {
+      action: {
+        label: 'Confirmar',
+        onClick: () => {
+          deleteMutation.mutate(stage.id, {
+            onSuccess: () => {
+              toast.success(`Estágio "${stageName}" removido.`);
+            },
+            onError: () => {
+              toast.error('Erro ao remover estágio. Pode haver leads vinculados.');
+            },
+          });
+        },
       },
-      onError: () => {
-        window.alert('❌ Erro ao remover estágio. Pode haver leads vinculados.');
-      },
+      cancel: { label: 'Cancelar', onClick: () => {} },
     });
   };
 
@@ -1073,16 +1194,27 @@ const StageManager: React.FC<{
     setCurrentStages(newStages);
   };
 
-  return (
-    <div className="fixed inset-0 z-[210] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in">
-      <div className={`${isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200'} border w-full max-w-md rounded-3xl overflow-hidden shadow-2xl animate-in zoom-in-95`}>
-        <div className={`p-6 border-b ${isDark ? 'border-zinc-800' : 'border-zinc-200'} flex justify-between items-center`}>
+  const handleSortableEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    setCurrentStages((prev) => {
+      const oldIndex = prev.indexOf(active.id as string);
+      const newIndex = prev.indexOf(over.id as string);
+      return arrayMove(prev, oldIndex, newIndex);
+    });
+  };
+
+  return createPortal(
+    <div className="fixed inset-0 z-[210] flex items-end md:items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} className={`${isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200'} border w-full max-w-md rounded-t-2xl md:rounded-2xl overflow-hidden shadow-2xl max-h-[75vh] md:max-h-[90vh] flex flex-col`}>
+        <div className={`p-6 border-b shrink-0 ${isDark ? 'border-zinc-800' : 'border-zinc-200'} flex justify-between items-center`}>
           <h2 className={`font-bold ${isDark ? 'text-white' : 'text-zinc-900'} flex items-center gap-2`}>
             <Settings2 size={18} className="text-nexus-orange" /> Configurar Pipeline
           </h2>
           <button onClick={onClose} className="text-zinc-500 hover:text-zinc-700 p-1 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all"><X size={20}/></button>
         </div>
-        <div className="p-8 space-y-6">
+        <div className="p-4 md:p-8 space-y-4 md:space-y-6 flex-1 overflow-y-auto overscroll-contain">
           <div className="flex gap-2">
             <input
               placeholder="Nome do novo estágio..."
@@ -1095,40 +1227,32 @@ const StageManager: React.FC<{
               <Plus size={24}/>
             </button>
           </div>
-          <div className="space-y-3 max-h-[350px] overflow-y-auto pr-2 scrollbar-thin">
-            {currentStages.map((stage, idx) => (
-              <div key={stage} className={`flex items-center gap-4 p-4 rounded-2xl border transition-all ${isDark ? 'bg-zinc-800/50 border-zinc-700 hover:bg-zinc-800' : 'bg-zinc-50 border-zinc-200 hover:bg-white hover:shadow-sm'}`}>
-                <div className="flex flex-col gap-1">
-                  <button
-                    disabled={idx === 0}
-                    onClick={() => handleMove(idx, 'up')}
-                    className="text-zinc-500 hover:text-nexus-orange disabled:opacity-20 disabled:hover:text-zinc-500 transition-colors"
-                  >
-                    <ChevronUp size={16} />
-                  </button>
-                  <button
-                    disabled={idx === currentStages.length - 1}
-                    onClick={() => handleMove(idx, 'down')}
-                    className="text-zinc-500 hover:text-nexus-orange disabled:opacity-20 disabled:hover:text-zinc-500 transition-colors"
-                  >
-                    <ChevronDown size={16} />
-                  </button>
-                </div>
-                <span className={`text-sm font-bold flex-1 ${isDark ? 'text-zinc-100' : 'text-zinc-700'}`}>{stage}</span>
-                <button onClick={() => handleRemove(stage)} className="text-zinc-400 hover:text-red-500 p-2 transition-colors">
-                  <Trash2 size={18}/>
-                </button>
+          <DndContext sensors={sortableSensors} collisionDetection={closestCenter} onDragEnd={handleSortableEnd}>
+            <SortableContext items={currentStages} strategy={verticalListSortingStrategy}>
+              <div className="space-y-3">
+                {currentStages.map((stage, idx) => (
+                  <SortableStageItem
+                    key={stage}
+                    stage={stage}
+                    idx={idx}
+                    total={currentStages.length}
+                    isDark={isDark}
+                    onMove={handleMove}
+                    onRemove={handleRemove}
+                  />
+                ))}
+                {currentStages.length === 0 && <p className="text-center py-10 text-zinc-500 italic text-xs">Nenhum estágio definido.</p>}
               </div>
-            ))}
-            {currentStages.length === 0 && <p className="text-center py-10 text-zinc-500 italic text-xs">Nenhum estágio definido.</p>}
-          </div>
+            </SortableContext>
+          </DndContext>
         </div>
-        <div className={`p-6 border-t flex gap-4 ${isDark ? 'bg-zinc-950 border-zinc-800' : 'bg-zinc-50 border-zinc-200'}`}>
+        <div className={`p-4 md:p-6 border-t flex flex-col-reverse md:flex-row gap-3 md:gap-4 shrink-0 ${isDark ? 'bg-zinc-950 border-zinc-800' : 'bg-zinc-50 border-zinc-200'}`}>
           <button onClick={onClose} className="flex-1 py-3 text-zinc-500 text-sm font-bold hover:text-zinc-900 transition-colors">Cancelar</button>
-          <button onClick={() => onSave(currentStages)} className="flex-1 py-3 bg-nexus-orange text-white rounded-xl text-sm font-bold hover:bg-nexus-orangeDark transition-all shadow-lg shadow-nexus-orange/20 active:scale-95">Salvar Configurações</button>
+          <button onClick={() => onSave(currentStages)} className="flex-1 py-3.5 md:py-3 px-4 bg-nexus-orange text-white rounded-xl text-sm font-bold hover:bg-nexus-orangeDark transition-all shadow-lg shadow-nexus-orange/20 active:scale-95">Salvar Configurações</button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 
@@ -1140,6 +1264,56 @@ const StageManager: React.FC<{
 // Motivo: Leads agora usam stageId do backend, não mapeamento hardcodado de status
 // Agora enviamos stageId diretamente ao invés de status
 // (FASE 2 - Integração com FunnelStages backend)
+
+// ═══════════════════════════════════════════════════════════════════════════
+// HELPERS: Staleness de cards (sem atividade)
+// ═══════════════════════════════════════════════════════════════════════════
+
+function getLeadStaleness(updatedAt: string): 'fresh' | 'yellow' | 'red' {
+  const hours = (Date.now() - new Date(updatedAt).getTime()) / 3_600_000;
+  if (hours > 48) return 'red';
+  if (hours > 24) return 'yellow';
+  return 'fresh';
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// COMPONENTES dnd-kit: DraggableCard + DroppableColumn
+// ═══════════════════════════════════════════════════════════════════════════
+
+function DraggableCard({ id, children }: { id: string; children: React.ReactNode }) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id });
+  return (
+    <div
+      ref={setNodeRef}
+      data-lead-card
+      style={{
+        transform: CSS.Translate.toString(transform),
+        transition: isDragging ? undefined : 'transform 250ms cubic-bezier(0.4, 0, 0.2, 1)',
+        opacity: isDragging ? 0.25 : 1,
+      }}
+      {...attributes}
+      {...listeners}
+    >
+      {children}
+    </div>
+  );
+}
+
+function DroppableColumn({ id, isDark, children }: { id: string; isDark: boolean; children: React.ReactNode }) {
+  const { setNodeRef, isOver } = useDroppable({ id });
+  return (
+    <div
+      ref={setNodeRef}
+      className={`flex-1 border border-dashed rounded-3xl p-3 space-y-3 overflow-y-auto scrollbar-thin transition-all duration-200 ${
+        isOver
+          ? 'bg-nexus-orange/5 border-nexus-orange/40 shadow-[inset_0_0_20px_rgba(255,115,0,0.05)]'
+          : isDark ? 'bg-zinc-900/30 border-zinc-800' : 'bg-zinc-50 border-zinc-200'
+      }`}
+    >
+      {children}
+    </div>
+  );
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // COMPONENTE PRINCIPAL: LeadKanban
@@ -1194,6 +1368,7 @@ export function LeadKanban() {
       assignedTo: apiLead.vendedor?.name || 'N/A',
       vendedorId: apiLead.vendedor?.id, // ✅ NEW: Preserve vendedor ID
       daysInStage: 0, // Calculado posteriormente se necessário
+      updatedAt: apiLead.updatedAt,
       notes: apiLead.notes ? [apiLead.notes] : [],
       interactions: (apiLead as any).interactions?.map((it: any) => ({
         id: it.id,
@@ -1214,13 +1389,81 @@ export function LeadKanban() {
       .map(stage => stage.name);
   }, [funnelStages]);
 
+  // Helper: cor por stage (sempre usa paleta por índice para garantir cores distintas)
+  const getStageColor = (stageName: string): string => {
+    if (stageName === 'Ganho') return STAGE_COLOR_GANHO;
+    if (stageName === 'Perdido') return STAGE_COLOR_PERDIDO;
+    const idx = stages.indexOf(stageName);
+    return STAGE_COLORS[idx % STAGE_COLORS.length] || '#FF7300';
+  };
+
   const [viewType, setViewType] = useState<'kanban' | 'list'>('kanban');
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
+  const [mobileStage, setMobileStage] = useState<string>('');
+  const [stageDropdownOpen, setStageDropdownOpen] = useState(false);
+  const stageDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Click-outside handler para fechar dropdown de stages mobile
+  useEffect(() => {
+    if (!stageDropdownOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (stageDropdownRef.current && !stageDropdownRef.current.contains(e.target as Node)) {
+        setStageDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('touchstart', handleClickOutside as any);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside as any);
+    };
+  }, [stageDropdownOpen]);
+
+  useEffect(() => {
+    if (stages.length > 0 && !mobileStage) {
+      setMobileStage(stages[0]);
+    }
+  }, [stages, mobileStage]);
+
+  // ─── Drag-to-scroll no board kanban ───────────────────────────────────────
+  const kanbanRef = useRef<HTMLDivElement>(null);
+  const dragScroll = useRef({ active: false, startX: 0, scrollLeft: 0 });
+
+  const handleKanbanMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    if ((e.target as HTMLElement).closest('[data-lead-card]')) return;
+    const el = kanbanRef.current;
+    if (!el) return;
+    dragScroll.current = { active: true, startX: e.clientX, scrollLeft: el.scrollLeft };
+    el.style.cursor = 'grabbing';
+    e.preventDefault();
+  };
+
+  const handleKanbanMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!dragScroll.current.active || !kanbanRef.current) return;
+    const dx = e.clientX - dragScroll.current.startX;
+    kanbanRef.current.scrollLeft = dragScroll.current.scrollLeft - dx;
+  };
+
+  const handleKanbanMouseUp = () => {
+    if (!kanbanRef.current) return;
+    dragScroll.current.active = false;
+    kanbanRef.current.style.cursor = '';
+  };
+  // ──────────────────────────────────────────────────────────────────────────
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isStageManagerOpen, setIsStageManagerOpen] = useState(false);
   const [isConvertModalOpen, setIsConvertModalOpen] = useState(false);
   const [selectedLeadToConvert, setSelectedLeadToConvert] = useState<any | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchQuery, setSearchQuery] = useState(() => searchParams.get('search') || '');
+
+  // Limpar ?search= da URL após preencher o campo (evita poluir URL)
+  useEffect(() => {
+    if (searchParams.has('search')) {
+      setSearchParams({}, { replace: true });
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const filteredLeads = leads.filter(l =>
     l.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -1368,27 +1611,27 @@ export function LeadKanban() {
     );
   };
 
-  const handleDragStart = (e: React.DragEvent, leadId: string) => {
-    e.dataTransfer.setData('leadId', leadId);
+  // ─── dnd-kit: drag and drop ───────────────────────────────────────────────
+  const [activeDragLead, setActiveDragLead] = useState<Lead | null>(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+  );
+
+  const handleDndStart = (event: DragStartEvent) => {
+    const lead = leads.find(l => l.id === event.active.id);
+    setActiveDragLead(lead || null);
   };
 
-  const handleDrop = (e: React.DragEvent, targetStage: string) => {
-    e.preventDefault();
-    const leadId = e.dataTransfer.getData('leadId');
-
-    // FASE 2: Buscar stageId do backend ao invés de usar mapping hardcoded
-    const stage = funnelStages.find(s => s.name === targetStage);
-
-    if (!stage) {
-      return;
-    }
-
-    // Enviar stageId diretamente ao invés de status
-    updateMutation.mutate({
-      id: leadId,
-      payload: { stageId: stage.id },
-    });
+  const handleDndEnd = (event: DragEndEvent) => {
+    setActiveDragLead(null);
+    const { active, over } = event;
+    if (!over) return;
+    const stage = funnelStages.find(s => s.name === (over.id as string));
+    if (!stage) return;
+    updateMutation.mutate({ id: active.id as string, payload: { stageId: stage.id } });
   };
+  // ──────────────────────────────────────────────────────────────────────────
 
   if (isLoading) {
     return (
@@ -1402,13 +1645,19 @@ export function LeadKanban() {
   }
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500 h-full flex flex-col">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className={`text-3xl font-bold ${isDark ? 'text-white' : 'text-zinc-900'}`}>Pipeline Comercial</h1>
-          <p className="text-zinc-500 font-medium">Gerenciamento de leads e oportunidades da Nexus Atemporal.</p>
+    <div className="space-y-4 md:space-y-6 animate-in fade-in duration-500 md:h-full md:flex md:flex-col">
+      <div className="flex flex-col gap-3 md:flex-row md:justify-between md:items-center">
+        <div className="flex items-center gap-3">
+          <div className={`p-2.5 rounded-xl ${isDark ? 'bg-zinc-800' : 'bg-zinc-100'}`}>
+            <TrendingUp size={20} className="text-nexus-orange" />
+          </div>
+          <div>
+            <h1 className={`text-xl md:text-3xl font-bold ${isDark ? 'text-white' : 'text-zinc-900'}`}>Pipeline Comercial</h1>
+            <p className="text-xs md:text-sm text-zinc-500 font-medium">Leads e oportunidades</p>
+          </div>
         </div>
-        <div className="flex gap-4">
+        {/* Desktop buttons */}
+        <div className="hidden md:flex gap-4">
            <button
              onClick={() => setIsStageManagerOpen(true)}
              className={`p-2 rounded-xl border transition-all ${isDark ? 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white' : 'bg-white border-zinc-200 text-zinc-500 hover:text-nexus-orange shadow-sm'}`}
@@ -1427,15 +1676,37 @@ export function LeadKanban() {
             <Plus size={22} /> Novo Lead
           </button>
         </div>
+        {/* Mobile action bar */}
+        <div className="flex flex-col gap-2 md:hidden">
+           <button
+            onClick={() => { setSelectedLead(null); setIsModalOpen(true); }}
+            className="w-full flex items-center justify-center gap-2 py-3.5 bg-nexus-orange hover:bg-nexus-orangeDark text-white rounded-xl text-base font-bold shadow-lg shadow-nexus-orange/20 transition-all active:scale-95"
+          >
+            <Plus size={20} /> Novo Lead
+          </button>
+           <div className="flex gap-2">
+             <div className={`flex flex-1 border rounded-xl p-1 ${isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200 shadow-sm'}`}>
+               <button onClick={() => setViewType('kanban')} className={`flex-1 py-2.5 rounded-lg transition-all flex items-center justify-center ${viewType === 'kanban' ? 'bg-nexus-orange text-white shadow-sm' : 'text-zinc-500'}`}><LayoutGrid size={18} /></button>
+               <button onClick={() => setViewType('list')} className={`flex-1 py-2.5 rounded-lg transition-all flex items-center justify-center ${viewType === 'list' ? 'bg-nexus-orange text-white shadow-sm' : 'text-zinc-500'}`}><ListIcon size={18} /></button>
+             </div>
+             <button
+               onClick={() => setIsStageManagerOpen(true)}
+               className={`p-3 rounded-xl border transition-all active:scale-95 ${isDark ? 'bg-zinc-900 border-zinc-800 text-zinc-400' : 'bg-white border-zinc-200 text-zinc-500 shadow-sm'}`}
+               title="Configurar Pipeline"
+             >
+               <Settings2 size={18} />
+             </button>
+           </div>
+        </div>
       </div>
 
-      <div className={`flex items-center gap-4 border p-4 rounded-2xl transition-all ${isDark ? 'bg-zinc-900/50 border-zinc-800' : 'bg-white border-zinc-200 shadow-sm'}`}>
-        <div className="relative max-w-md flex-1">
-           <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
+      <div className={`flex flex-col md:flex-row items-center gap-4 border p-4 rounded-2xl transition-all ${isDark ? 'bg-zinc-900/50 border-zinc-800' : 'bg-white border-zinc-200 shadow-sm'}`}>
+        <div className="relative w-full md:max-w-md md:flex-1">
+           <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
            <input
               type="text"
-              placeholder="Buscar por nome, clínica ou CNPJ..."
-              className={`w-full border-none rounded-xl py-2.5 pl-12 text-sm focus:ring-2 focus:ring-nexus-orange/20 outline-none transition-all ${isDark ? 'bg-zinc-800 text-white placeholder:text-zinc-500' : 'bg-zinc-100 text-zinc-900'}`}
+              placeholder="Buscar lead..."
+              className={`w-full border-none rounded-xl py-3 md:py-2.5 pl-11 md:pl-12 text-base md:text-sm focus:ring-2 focus:ring-nexus-orange/20 outline-none transition-all ${isDark ? 'bg-zinc-800 text-white placeholder:text-zinc-400' : 'bg-zinc-100 text-zinc-900'}`}
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
            />
@@ -1448,120 +1719,463 @@ export function LeadKanban() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-hidden">
+      <div className="md:flex-1 md:overflow-hidden">
         {viewType === 'kanban' ? (
-          <div className="flex gap-4 overflow-x-auto pb-6 h-full items-start scroll-smooth scrollbar-thin">
-            {stages.map(stage => (
-              <div key={stage} onDragOver={e => e.preventDefault()} onDrop={e => handleDrop(e, stage)} className="min-w-[320px] w-[320px] flex flex-col gap-4 h-full">
-                <div className="flex items-center justify-between px-3">
-                  <div className="flex items-center gap-2">
-                    <h3 className={`font-black text-xs uppercase tracking-widest ${isDark ? 'text-zinc-300' : 'text-zinc-600'}`}>{stage}</h3>
-                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${isDark ? 'bg-zinc-800 text-zinc-400' : 'bg-zinc-200 text-zinc-500'}`}>
-                      {filteredLeads.filter(l => l.stage === stage).length}
+          <>
+          {/* Mobile stage selector — dropdown simples */}
+          <div className="md:hidden mb-3 relative" ref={stageDropdownRef}>
+            {(() => {
+              const allStages = [
+                ...stages.map(s => ({ name: s, count: filteredLeads.filter(l => l.stage === s).length })),
+                { name: 'Ganho', count: filteredLeads.filter(l => l.stage === 'Ganho').length },
+                { name: 'Perdido', count: filteredLeads.filter(l => l.stage === 'Perdido').length },
+              ];
+              const currentStage = allStages.find(s => s.name === mobileStage) || allStages[0];
+              const currentColor = getStageColor(currentStage.name);
+              return (
+                <>
+                  <button
+                    onClick={() => setStageDropdownOpen(!stageDropdownOpen)}
+                    className={`w-full flex items-center justify-between px-4 py-3.5 rounded-xl border text-base md:text-sm font-semibold cursor-pointer transition-all ${
+                      isDark ? 'bg-zinc-900 border-zinc-700 text-zinc-100' : 'bg-white border-zinc-200 text-zinc-800 shadow-sm'
+                    }`}
+                    style={{ borderLeftWidth: 3, borderLeftColor: currentColor }}
+                  >
+                    <span className="flex items-center gap-2.5">
+                      <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: currentColor }} />
+                      {currentStage.name}
+                      <span className={`text-xs px-1.5 py-0.5 rounded-full ${isDark ? 'bg-zinc-800 text-zinc-400' : 'bg-zinc-100 text-zinc-500'}`}>
+                        {currentStage.count}
+                      </span>
                     </span>
-                  </div>
-                </div>
-                <div className={`flex-1 border border-dashed rounded-3xl p-3 space-y-3 overflow-y-auto transition-colors scrollbar-thin ${isDark ? 'bg-zinc-900/30 border-zinc-800' : 'bg-zinc-50 border-zinc-200'}`}>
-                  {filteredLeads.filter(l => l.stage === stage).map(lead => (
+                    <ChevronDown size={18} className={`transition-transform ${stageDropdownOpen ? 'rotate-180' : ''} ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`} />
+                  </button>
+                  {stageDropdownOpen && (
                     <div
-                      key={lead.id}
-                      draggable
-                      onDragStart={e => handleDragStart(e, lead.id)}
-                      onClick={() => { setSelectedLead(lead); setIsModalOpen(true); }}
-                      className={`${isDark ? 'bg-zinc-800 border-zinc-700 hover:border-nexus-orange/50' : 'bg-white border-zinc-200 hover:border-nexus-orange shadow-sm'} p-5 rounded-2xl transition-all cursor-grab active:cursor-grabbing group shadow-md animate-in slide-in-from-top-4 duration-300 border`}
+                      className={`absolute left-0 right-0 top-full mt-1 z-50 rounded-xl border shadow-xl max-h-[60vh] overflow-y-auto ${
+                        isDark ? 'bg-zinc-900 border-zinc-700' : 'bg-white border-zinc-200'
+                      }`}
                     >
-                      <div className="flex justify-between items-start mb-3">
-                        <div className="overflow-hidden flex-1">
-                          <span className={`font-bold text-sm block group-hover:text-nexus-orange transition-colors truncate ${isDark ? 'text-white' : 'text-zinc-900'}`}>{lead.name}</span>
-                          <span className="text-[10px] text-zinc-500 font-medium truncate block">{lead.clinic}</span>
-                        </div>
-                        <LeadScoreBadge score={lead.score} showTooltip={false} />
-                      </div>
-
-                      <div className="flex flex-wrap gap-2 mb-4">
-                        <RoleTag role={lead.role} />
-                      </div>
-
-                      {lead.cnpj && (
-                        <div className="flex items-center gap-1.5 mb-2 text-[10px] text-zinc-500 font-medium">
-                          <FileText size={12} className="text-zinc-600"/> {lead.cnpj}
-                        </div>
-                      )}
-
-                      <div className={`flex flex-col gap-2 mt-4 border-t pt-4 ${isDark ? 'border-zinc-700' : 'border-zinc-100'}`}>
-                        <div className="flex items-center gap-2 text-[11px] text-zinc-500 font-bold"><Phone size={12} className="text-nexus-orange"/> {lead.phone}</div>
-                        <div className="flex justify-between items-center mt-2">
-                          <div className="flex flex-col">
-                             <span className="text-[9px] text-zinc-400 font-bold uppercase">Resp: {lead.assignedTo.split(' ')[0]}</span>
-                             <span className="text-[9px] text-zinc-500 flex items-center gap-1 font-medium mt-0.5"><Clock size={10} /> {lead.daysInStage} dias</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {/* v2.31.0: Dynamic conversion button - shows in LAST 2 ACTIVE STAGES or if score >= 60 */}
-                            {(lead.score >= 60 || (lead.stageId && conversionEligibleStageIds.includes(lead.stageId))) && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  const apiLead = apiLeads.find((l: ApiLead) => l.id === lead.id);
-
-                                  // ✅ v2.29.0: Enriquecer apiLead com fallback local para interestPlanId
-                                  const enrichedLead = {
-                                    ...apiLead,
-                                    interestPlanId: apiLead?.interestPlanId ||
-                                                    plans.find(p => p.name === lead.interestPlan)?.id,
-                                    interestPlan: apiLead?.interestPlan ||
-                                                  plans.find(p => p.name === lead.interestPlan),
-                                  };
-
-                                  setSelectedLeadToConvert(enrichedLead);
-                                  setIsConvertModalOpen(true);
-                                }}
-                                className="px-2 py-1 text-[9px] font-bold bg-green-600 hover:bg-green-700 text-white rounded-full transition-colors flex items-center gap-1"
-                                title="Converter em Cliente"
-                              >
-                                Converter
-                              </button>
-                            )}
-                            <img src={`https://picsum.photos/seed/${lead.assignedTo}/32/32`} className="w-6 h-6 rounded-full ring-2 ring-nexus-orange/30" title={lead.assignedTo} alt={lead.assignedTo} />
-                          </div>
-                        </div>
-                      </div>
+                      {allStages.map(({ name, count }) => {
+                        const color = getStageColor(name);
+                        const isSelected = mobileStage === name;
+                        return (
+                          <button
+                            key={name}
+                            onClick={() => { setMobileStage(name); setStageDropdownOpen(false); }}
+                            className={`w-full flex items-center justify-between px-4 py-3 text-sm font-medium transition-colors border-b last:border-b-0 ${
+                              isDark ? 'border-zinc-800' : 'border-zinc-100'
+                            } ${
+                              isSelected
+                                ? isDark ? 'bg-zinc-800' : 'bg-zinc-50'
+                                : isDark ? 'text-zinc-300 active:bg-zinc-800' : 'text-zinc-600 active:bg-zinc-50'
+                            }`}
+                            style={isSelected ? { color } : undefined}
+                          >
+                            <span className="flex items-center gap-2.5">
+                              <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
+                              {name}
+                            </span>
+                            <span
+                              className="text-xs px-2 py-0.5 rounded-full font-bold"
+                              style={isSelected ? { backgroundColor: `${color}15`, color } : undefined}
+                            >
+                              {count}
+                            </span>
+                          </button>
+                        );
+                      })}
                     </div>
-                  ))}
-                  {filteredLeads.filter(l => l.stage === stage).length === 0 && (
-                     <div className="flex items-center justify-center h-24 text-[10px] text-zinc-500 italic opacity-40">Sem leads nesta fase</div>
                   )}
-                </div>
-              </div>
-            ))}
+                </>
+              );
+            })()}
+          </div>
+          <DndContext sensors={sensors} onDragStart={handleDndStart} onDragEnd={handleDndEnd}>
+            <div
+              ref={kanbanRef}
+              className="hidden md:flex gap-4 overflow-x-auto pb-6 h-full items-start select-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              onMouseDown={handleKanbanMouseDown}
+              onMouseMove={handleKanbanMouseMove}
+              onMouseUp={handleKanbanMouseUp}
+              onMouseLeave={handleKanbanMouseUp}
+            >
+              {stages.map(stage => (
+                <div key={stage} className="min-w-[320px] w-[320px] flex flex-col gap-4 h-full">
+                  <div className="flex items-center justify-between px-3">
+                    <div className="flex items-center gap-2">
+                      <h3 className={`font-black text-xs uppercase tracking-widest ${isDark ? 'text-zinc-300' : 'text-zinc-600'}`}>{stage}</h3>
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${isDark ? 'bg-zinc-800 text-zinc-400' : 'bg-zinc-200 text-zinc-500'}`}>
+                        {filteredLeads.filter(l => l.stage === stage).length}
+                      </span>
+                    </div>
+                  </div>
+                  <DroppableColumn id={stage} isDark={isDark}>
+                    {filteredLeads.filter(l => l.stage === stage).map(lead => {
+                      const staleness = getLeadStaleness(lead.updatedAt);
+                      const staleClass = staleness === 'red'
+                        ? 'animate-pulse-red'
+                        : staleness === 'yellow'
+                          ? 'animate-pulse-yellow'
+                          : '';
+                      return (
+                        <DraggableCard key={lead.id} id={lead.id}>
+                          <div
+                            onClick={() => { setSelectedLead(lead); setIsModalOpen(true); }}
+                            className={`${
+                              isDark
+                                ? 'bg-zinc-800 border-zinc-700 hover:border-nexus-orange/50 hover:shadow-nexus-orange/10'
+                                : 'bg-white border-zinc-200 hover:border-nexus-orange/60 shadow-sm'
+                            } ${staleClass} p-5 rounded-2xl transition-all duration-300 cursor-pointer group shadow-md hover:shadow-xl hover:-translate-y-0.5 animate-in slide-in-from-top-4 duration-300 border`}
+                          >
+                            <div className="flex justify-between items-start mb-3">
+                              <div className="overflow-hidden flex-1">
+                                <span className={`font-bold text-sm block group-hover:text-nexus-orange transition-colors truncate ${isDark ? 'text-white' : 'text-zinc-900'}`}>{lead.name}</span>
+                                <span className="text-[10px] text-zinc-500 font-medium truncate block">{lead.clinic}</span>
+                              </div>
+                              <LeadScoreBadge score={lead.score} showTooltip={false} />
+                            </div>
 
-            {/* Coluna Ganhos */}
-            <div className="min-w-[280px] w-[280px] flex flex-col gap-4 opacity-50">
-               <h3 className="font-black text-[10px] uppercase tracking-[0.2em] text-green-600 px-3">Ganhos (Convertidos)</h3>
-               <div className={`flex-1 border border-dashed rounded-3xl p-3 space-y-3 overflow-y-auto scrollbar-thin ${isDark ? 'bg-green-900/5 border-green-900/10' : 'bg-green-50 border-green-200'}`}>
+                            <div className="flex flex-wrap gap-2 mb-4">
+                              <RoleTag role={lead.role} />
+                            </div>
+
+                            {lead.cnpj && (
+                              <div className="flex items-center gap-1.5 mb-2 text-[10px] text-zinc-500 font-medium">
+                                <FileText size={12} className="text-zinc-600"/> {lead.cnpj}
+                              </div>
+                            )}
+
+                            <div className={`flex flex-col gap-2 mt-4 border-t pt-4 ${isDark ? 'border-zinc-700' : 'border-zinc-100'}`}>
+                              <div className="flex items-center gap-2 text-[11px] text-zinc-500 font-bold"><Phone size={12} className="text-nexus-orange"/> {lead.phone}</div>
+                              <div className="flex justify-between items-center mt-2">
+                                <div className="flex flex-col">
+                                  <span className="text-[9px] text-zinc-400 font-bold uppercase">Resp: {lead.assignedTo.split(' ')[0]}</span>
+                                  <span className="text-[9px] text-zinc-500 flex items-center gap-1 font-medium mt-0.5"><Clock size={10} /> {lead.daysInStage} dias</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  {/* v2.31.0: Dynamic conversion button */}
+                                  {(lead.score >= 60 || (lead.stageId && conversionEligibleStageIds.includes(lead.stageId))) && (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        const apiLead = apiLeads.find((l: ApiLead) => l.id === lead.id);
+                                        const enrichedLead = {
+                                          ...apiLead,
+                                          interestPlanId: apiLead?.interestPlanId ||
+                                                          plans.find(p => p.name === lead.interestPlan)?.id,
+                                          interestPlan: apiLead?.interestPlan ||
+                                                        plans.find(p => p.name === lead.interestPlan),
+                                        };
+                                        setSelectedLeadToConvert(enrichedLead);
+                                        setIsConvertModalOpen(true);
+                                      }}
+                                      className="px-2 py-1 text-[9px] font-bold bg-green-600 hover:bg-green-700 active:scale-95 text-white rounded-full transition-all flex items-center gap-1"
+                                      title="Converter em Cliente"
+                                    >
+                                      Converter
+                                    </button>
+                                  )}
+                                  <img src={`https://picsum.photos/seed/${lead.assignedTo}/32/32`} className="w-6 h-6 rounded-full ring-2 ring-nexus-orange/30 group-hover:ring-nexus-orange/50 transition-all" title={lead.assignedTo} alt={lead.assignedTo} />
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </DraggableCard>
+                      );
+                    })}
+                    {filteredLeads.filter(l => l.stage === stage).length === 0 && (
+                      <div className="flex items-center justify-center h-24 text-[10px] text-zinc-500 italic opacity-40">Sem leads nesta fase</div>
+                    )}
+                  </DroppableColumn>
+                </div>
+              ))}
+
+              {/* Coluna Ganhos */}
+              <div className="min-w-[280px] w-[280px] flex flex-col gap-4 opacity-50">
+                <h3 className="font-black text-[10px] uppercase tracking-[0.2em] text-green-600 px-3">Ganhos (Convertidos)</h3>
+                <div className={`flex-1 border border-dashed rounded-3xl p-3 space-y-3 overflow-y-auto scrollbar-thin ${isDark ? 'bg-green-900/5 border-green-900/10' : 'bg-green-50 border-green-200'}`}>
                   {filteredLeads.filter(l => l.stage === 'Ganho').map(lead => (
                     <div key={lead.id} onClick={() => { setSelectedLead(lead); setIsModalOpen(true); }} className={`${isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200'} p-3 rounded-xl cursor-pointer hover:border-green-500 transition-all shadow-sm border`}>
-                       <p className={`text-xs font-bold truncate ${isDark ? 'text-zinc-300' : 'text-zinc-900'}`}>{lead.name}</p>
-                       <p className="text-[9px] text-zinc-500">{lead.clinic}</p>
+                      <p className={`text-xs font-bold truncate ${isDark ? 'text-zinc-300' : 'text-zinc-900'}`}>{lead.name}</p>
+                      <p className="text-[9px] text-zinc-500">{lead.clinic}</p>
                     </div>
                   ))}
-               </div>
-            </div>
+                </div>
+              </div>
 
-            {/* Coluna Perdidos */}
-            <div className="min-w-[280px] w-[280px] flex flex-col gap-4 opacity-50">
-               <h3 className="font-black text-[10px] uppercase tracking-[0.2em] text-red-600 px-3">Perdidos</h3>
-               <div className={`flex-1 border border-dashed rounded-3xl p-3 space-y-3 overflow-y-auto scrollbar-thin ${isDark ? 'bg-red-900/5 border-red-900/10' : 'bg-red-50 border-red-200'}`}>
+              {/* Coluna Perdidos */}
+              <div className="min-w-[280px] w-[280px] flex flex-col gap-4 opacity-50">
+                <h3 className="font-black text-[10px] uppercase tracking-[0.2em] text-red-600 px-3">Perdidos</h3>
+                <div className={`flex-1 border border-dashed rounded-3xl p-3 space-y-3 overflow-y-auto scrollbar-thin ${isDark ? 'bg-red-900/5 border-red-900/10' : 'bg-red-50 border-red-200'}`}>
                   {filteredLeads.filter(l => l.stage === 'Perdido').map(lead => (
                     <div key={lead.id} onClick={() => { setSelectedLead(lead); setIsModalOpen(true); }} className={`${isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200'} p-3 rounded-xl cursor-pointer hover:border-red-500 transition-all shadow-sm border`}>
-                       <p className={`text-xs font-bold truncate ${isDark ? 'text-zinc-300' : 'text-zinc-900'}`}>{lead.name}</p>
-                       <p className="text-[9px] text-zinc-500">{lead.clinic}</p>
+                      <p className={`text-xs font-bold truncate ${isDark ? 'text-zinc-300' : 'text-zinc-900'}`}>{lead.name}</p>
+                      <p className="text-[9px] text-zinc-500">{lead.clinic}</p>
                     </div>
                   ))}
-               </div>
+                </div>
+              </div>
             </div>
-          </div>
+
+            {/* Ghost flutuante durante o drag */}
+            <DragOverlay
+              dropAnimation={{
+                duration: 350,
+                easing: 'cubic-bezier(0.18, 0.67, 0.6, 1.22)',
+                sideEffects: defaultDropAnimationSideEffects({
+                  styles: { active: { opacity: '0.4' } },
+                }),
+              }}
+            >
+              {activeDragLead ? (
+                <div className="scale-105 rotate-[2deg] shadow-[0_25px_60px_-15px_rgba(255,115,0,0.45)] rounded-2xl pointer-events-none">
+                  <div className={`${isDark ? 'bg-zinc-800 border-nexus-orange/60' : 'bg-white border-nexus-orange/70'} p-5 rounded-2xl border-2 shadow-xl`}>
+                    <div className="flex justify-between items-start mb-3">
+                      <div className="overflow-hidden flex-1">
+                        <span className={`font-bold text-sm block text-nexus-orange truncate`}>{activeDragLead.name}</span>
+                        <span className="text-[10px] text-zinc-500 font-medium truncate block">{activeDragLead.clinic}</span>
+                      </div>
+                      <LeadScoreBadge score={activeDragLead.score} showTooltip={false} />
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <RoleTag role={activeDragLead.role} />
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </DragOverlay>
+
+            {/* Mobile: single stage card list — same visual as desktop kanban cards */}
+            <div className="md:hidden space-y-3 overflow-y-auto pb-4">
+              {filteredLeads.filter(l => l.stage === mobileStage).map(lead => {
+                const staleness = getLeadStaleness(lead.updatedAt);
+                const staleClass = staleness === 'red' ? 'animate-pulse-red' : staleness === 'yellow' ? 'animate-pulse-yellow' : '';
+                return (
+                  <div
+                    key={lead.id}
+                    onClick={() => { setSelectedLead(lead); setIsModalOpen(true); }}
+                    className={`${
+                      isDark
+                        ? 'bg-zinc-800 border-zinc-700 hover:border-nexus-orange/50'
+                        : 'bg-white border-zinc-200 shadow-sm hover:border-nexus-orange/60'
+                    } ${staleClass} p-4 rounded-xl border cursor-pointer active:scale-[0.98] transition-all shadow-md`}
+                  >
+                    <div className="flex justify-between items-start mb-1">
+                      <div className="overflow-hidden flex-1">
+                        <span className={`font-bold text-base block truncate ${isDark ? 'text-white' : 'text-zinc-900'}`}>{lead.name}</span>
+                        <span className="text-xs text-zinc-500 font-medium truncate block">{lead.clinic}</span>
+                      </div>
+                      <LeadScoreBadge score={lead.score} showTooltip={false} />
+                    </div>
+
+                    <div className="flex flex-wrap gap-2 mb-1">
+                      <RoleTag role={lead.role} />
+                    </div>
+
+                    {lead.cnpj && (
+                      <div className="flex items-center gap-1.5 mb-1 text-xs text-zinc-500 font-medium">
+                        <FileText size={12} className="text-zinc-600"/> {lead.cnpj}
+                      </div>
+                    )}
+
+                    <div className={`flex flex-col gap-2 mt-2 border-t pt-2 ${isDark ? 'border-zinc-700' : 'border-zinc-100'}`}>
+                      <div className="flex items-center gap-2 text-sm text-zinc-500 font-bold"><Phone size={12} className="text-nexus-orange"/> {lead.phone}</div>
+                      <div className="flex justify-between items-center mt-1">
+                        <div className="flex flex-col">
+                          <span className="text-xs text-zinc-400 font-bold uppercase">Resp: {lead.assignedTo.split(' ')[0]}</span>
+                          <span className="text-xs text-zinc-500 flex items-center gap-1 font-medium mt-0.5"><Clock size={10} /> {lead.daysInStage} dias</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {/* Botoes Voltar/Avancar fase — mobile only (kanban) */}
+                          {(() => {
+                            if (lead.stage === 'Ganho' || lead.stage === 'Perdido') return null;
+                            const currentIdx = stages.indexOf(lead.stage);
+                            if (currentIdx < 0) return null;
+                            const prevStageName = currentIdx > 0 ? stages[currentIdx - 1] : null;
+                            const nextStageName = currentIdx < stages.length - 1 ? stages[currentIdx + 1] : null;
+                            const prevFunnelStage = prevStageName ? funnelStages.find(s => s.name === prevStageName) : null;
+                            const nextFunnelStage = nextStageName ? funnelStages.find(s => s.name === nextStageName) : null;
+                            return (
+                              <div className="flex items-center gap-1">
+                                {prevFunnelStage && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      updateMutation.mutate({ id: lead.id, payload: { stageId: prevFunnelStage.id } });
+                                    }}
+                                    className="p-1.5 bg-nexus-orange/10 text-nexus-orange rounded-full transition-all active:scale-95"
+                                    title={`Voltar para ${prevStageName}`}
+                                  >
+                                    <ChevronLeft size={14} />
+                                  </button>
+                                )}
+                                {nextFunnelStage && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      updateMutation.mutate({ id: lead.id, payload: { stageId: nextFunnelStage.id } });
+                                    }}
+                                    className="p-1.5 bg-nexus-orange/10 text-nexus-orange rounded-full transition-all active:scale-95"
+                                    title={`Avançar para ${nextStageName}`}
+                                  >
+                                    <ChevronRight size={14} />
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          })()}
+                          {(lead.score >= 60 || (lead.stageId && conversionEligibleStageIds.includes(lead.stageId))) && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const apiLead = apiLeads.find((l: ApiLead) => l.id === lead.id);
+                                const enrichedLead = {
+                                  ...apiLead,
+                                  interestPlanId: apiLead?.interestPlanId || plans.find(p => p.name === lead.interestPlan)?.id,
+                                  interestPlan: apiLead?.interestPlan || plans.find(p => p.name === lead.interestPlan),
+                                };
+                                setSelectedLeadToConvert(enrichedLead);
+                                setIsConvertModalOpen(true);
+                              }}
+                              className="px-2 py-1 text-xs font-bold bg-green-600 hover:bg-green-700 active:scale-95 text-white rounded-full transition-all flex items-center gap-1"
+                            >
+                              Converter
+                            </button>
+                          )}
+                          <img src={`https://picsum.photos/seed/${lead.assignedTo}/32/32`} className="w-6 h-6 rounded-full ring-2 ring-nexus-orange/30" title={lead.assignedTo} alt={lead.assignedTo} />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+              {filteredLeads.filter(l => l.stage === mobileStage).length === 0 && (
+                <div className="text-center py-8 text-sm text-zinc-500 italic">Sem leads nesta fase</div>
+              )}
+            </div>
+          </DndContext>
+          </>
         ) : (
-          <div className={`${isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200 shadow-sm'} border rounded-3xl overflow-hidden shadow-xl animate-in slide-in-from-bottom-4 duration-500`}>
+          <>
+          {/* Mobile: card list view — same visual as desktop kanban cards */}
+          <div className="md:hidden space-y-3 overflow-y-auto pb-4">
+            {filteredLeads.map(lead => {
+              const staleness = getLeadStaleness(lead.updatedAt);
+              const staleClass = staleness === 'red' ? 'animate-pulse-red' : staleness === 'yellow' ? 'animate-pulse-yellow' : '';
+              return (
+                <div
+                  key={lead.id}
+                  onClick={() => { setSelectedLead(lead); setIsModalOpen(true); }}
+                  className={`${
+                    isDark
+                      ? 'bg-zinc-800 border-zinc-700 hover:border-nexus-orange/50'
+                      : 'bg-white border-zinc-200 shadow-sm hover:border-nexus-orange/60'
+                  } ${staleClass} p-4 rounded-xl border cursor-pointer active:scale-[0.98] transition-all shadow-md`}
+                >
+                  <div className="flex justify-between items-start mb-1">
+                    <div className="overflow-hidden flex-1">
+                      <span className={`font-bold text-base block truncate ${isDark ? 'text-white' : 'text-zinc-900'}`}>{lead.name}</span>
+                      <span className="text-xs text-zinc-500 font-medium truncate block">{lead.clinic}</span>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className={`px-2 py-0.5 rounded-lg text-xs font-bold border ${
+                        lead.stage === 'Ganho' ? 'bg-green-500/10 border-green-500/20 text-green-500' :
+                        lead.stage === 'Perdido' ? 'bg-red-500/10 border-red-500/20 text-red-500' :
+                        isDark ? 'bg-zinc-800 border-zinc-700 text-zinc-300' : 'bg-zinc-100 border-zinc-200 text-zinc-600'
+                      }`}>{lead.stage}</span>
+                      <LeadScoreBadge score={lead.score} showTooltip={false} />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2 mb-1">
+                    <RoleTag role={lead.role} />
+                  </div>
+
+                  {lead.cnpj && (
+                    <div className="flex items-center gap-1.5 mb-1 text-xs text-zinc-500 font-medium">
+                      <FileText size={12} className="text-zinc-600"/> {lead.cnpj}
+                    </div>
+                  )}
+
+                  <div className={`flex flex-col gap-2 mt-2 border-t pt-2 ${isDark ? 'border-zinc-700' : 'border-zinc-100'}`}>
+                    <div className="flex items-center gap-2 text-sm text-zinc-500 font-bold"><Phone size={12} className="text-nexus-orange"/> {lead.phone}</div>
+                    <div className="flex justify-between items-center mt-1">
+                      <div className="flex flex-col">
+                        <span className="text-xs text-zinc-400 font-bold uppercase">Resp: {lead.assignedTo.split(' ')[0]}</span>
+                        <span className="text-xs text-zinc-500 flex items-center gap-1 font-medium mt-0.5"><Clock size={10} /> {lead.daysInStage} dias</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {/* Botoes Voltar/Avancar fase — mobile only (list view) */}
+                        {(() => {
+                          if (lead.stage === 'Ganho' || lead.stage === 'Perdido') return null;
+                          const currentIdx = stages.indexOf(lead.stage);
+                          if (currentIdx < 0) return null;
+                          const prevStageName = currentIdx > 0 ? stages[currentIdx - 1] : null;
+                          const nextStageName = currentIdx < stages.length - 1 ? stages[currentIdx + 1] : null;
+                          const prevFunnelStage = prevStageName ? funnelStages.find(s => s.name === prevStageName) : null;
+                          const nextFunnelStage = nextStageName ? funnelStages.find(s => s.name === nextStageName) : null;
+                          return (
+                            <div className="flex items-center gap-1">
+                              {prevFunnelStage && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    updateMutation.mutate({ id: lead.id, payload: { stageId: prevFunnelStage.id } });
+                                  }}
+                                  className="p-1.5 bg-nexus-orange/10 text-nexus-orange rounded-full transition-all active:scale-95"
+                                  title={`Voltar para ${prevStageName}`}
+                                >
+                                  <ChevronLeft size={14} />
+                                </button>
+                              )}
+                              {nextFunnelStage && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    updateMutation.mutate({ id: lead.id, payload: { stageId: nextFunnelStage.id } });
+                                  }}
+                                  className="p-1.5 bg-nexus-orange/10 text-nexus-orange rounded-full transition-all active:scale-95"
+                                  title={`Avançar para ${nextStageName}`}
+                                >
+                                  <ChevronRight size={14} />
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })()}
+                        {(lead.score >= 60 || (lead.stageId && conversionEligibleStageIds.includes(lead.stageId))) && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const apiLead = apiLeads.find((l: ApiLead) => l.id === lead.id);
+                              const enrichedLead = {
+                                ...apiLead,
+                                interestPlanId: apiLead?.interestPlanId || plans.find(p => p.name === lead.interestPlan)?.id,
+                                interestPlan: apiLead?.interestPlan || plans.find(p => p.name === lead.interestPlan),
+                              };
+                              setSelectedLeadToConvert(enrichedLead);
+                              setIsConvertModalOpen(true);
+                            }}
+                            className="px-2 py-1 text-xs font-bold bg-green-600 hover:bg-green-700 active:scale-95 text-white rounded-full transition-all flex items-center gap-1"
+                          >
+                            Converter
+                          </button>
+                        )}
+                        <img src={`https://picsum.photos/seed/${lead.assignedTo}/32/32`} className="w-6 h-6 rounded-full ring-2 ring-nexus-orange/30" title={lead.assignedTo} alt={lead.assignedTo} />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+            {filteredLeads.length === 0 && (
+              <div className="text-center py-8 text-sm text-zinc-500 italic">Nenhum lead encontrado</div>
+            )}
+          </div>
+
+          {/* Desktop: table view */}
+          <div className={`hidden md:block ${isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200 shadow-sm'} border rounded-3xl overflow-hidden shadow-xl animate-in slide-in-from-bottom-4 duration-500`}>
             <table className="w-full text-left border-collapse">
               <thead className={`${isDark ? 'bg-zinc-950/30 text-zinc-500' : 'bg-zinc-50 text-zinc-400'} border-b ${isDark ? 'border-zinc-800' : 'border-zinc-200'} text-[10px] font-bold uppercase tracking-widest`}>
                 <tr>
@@ -1616,6 +2230,7 @@ export function LeadKanban() {
               </tbody>
             </table>
           </div>
+          </>
         )}
       </div>
 
@@ -1674,7 +2289,7 @@ export function LeadKanban() {
                   setIsStageManagerOpen(false);
                 },
                 onError: () => {
-                  window.alert('❌ Erro ao salvar pipeline. Tente novamente.');
+                  toast.error('Erro ao salvar pipeline. Tente novamente.');
                 },
               }
             );
@@ -1693,6 +2308,7 @@ export function LeadKanban() {
           lead={selectedLeadToConvert}
         />
       )}
+
     </div>
   );
 }

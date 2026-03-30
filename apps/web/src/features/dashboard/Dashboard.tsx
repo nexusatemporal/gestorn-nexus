@@ -1,8 +1,10 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useApiQuery } from '@/hooks/useApi';
 import { DashboardStats, ProductType, GenerateInsightsResponseDto, InsightSeverity } from '@/types';
 import { formatCurrency } from '@/utils/formatters';
+import { cn } from '@/utils/cn';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useUIStore } from '@/stores/useUIStore';
@@ -20,6 +22,10 @@ import {
   Clock,
   Calendar,
   RefreshCw,
+  ChevronDown,
+  ChevronUp,
+  LayoutDashboard,
+  Filter,
 } from 'lucide-react';
 import {
   XAxis,
@@ -74,36 +80,36 @@ function MetricCard({
     <div
       className={`${
         isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200 shadow-sm'
-      } border p-6 rounded-2xl transition-all duration-300`}
+      } border p-4 md:p-6 rounded-2xl transition-all duration-300 active:scale-[0.97]`}
     >
-      <div className="flex justify-between items-start mb-4">
+      <div className="flex justify-between items-start mb-2 md:mb-4">
         <div
-          className={`p-2.5 rounded-xl text-nexus-orange ${
+          className={`p-2 md:p-2.5 rounded-lg text-nexus-orange ${
             isDark ? 'bg-zinc-800' : 'bg-zinc-100'
           }`}
         >
-          <Icon size={24} />
+          <Icon size={18} className="md:w-5 md:h-5" />
         </div>
         {trend && (
           <div
-            className={`flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full ${
+            className={`flex items-center gap-1 text-[10px] md:text-xs font-medium px-1.5 md:px-2 py-0.5 md:py-1 rounded-full ${
               trendUp
                 ? 'bg-green-500/10 text-green-500'
                 : 'bg-red-500/10 text-red-500'
             }`}
           >
-            {trendUp ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
+            {trendUp ? <ArrowUpRight size={12} className="md:w-3.5 md:h-3.5" /> : <ArrowDownRight size={12} className="md:w-3.5 md:h-3.5" />}
             {trend}
           </div>
         )}
       </div>
-      <p className="text-zinc-500 text-sm font-medium">{title}</p>
+      <p className="text-zinc-500 text-xs md:text-sm font-medium">{title}</p>
       <h3
-        className={`text-2xl font-bold mt-1 ${isDark ? 'text-white' : 'text-zinc-900'}`}
+        className={`text-base md:text-2xl font-bold mt-1 ${isDark ? 'text-white' : 'text-zinc-900'}`}
       >
         {value}
       </h3>
-      {subValue && <p className="text-xs text-zinc-400 mt-2">{subValue}</p>}
+      {subValue && <p className="text-[10px] md:text-xs text-zinc-500 mt-1 md:mt-2 line-clamp-1">{subValue}</p>}
     </div>
   );
 }
@@ -115,6 +121,11 @@ export function Dashboard() {
   const [product, setProduct] = useState('');
   const [mrrGraphPeriod, setMrrGraphPeriod] = useState<6 | 12>(12); // ✅ v2.50.2: Filtro próprio do gráfico MRR
   const [insightsRefreshKey, setInsightsRefreshKey] = useState(0); // ✅ v2.55.0: Force refresh insights
+  const [activeActivityTab, setActiveActivityTab] = useState<'leads' | 'clients' | 'payments'>('leads');
+  const [activityDropdownOpen, setActivityDropdownOpen] = useState(false);
+  const [productDropdownOpen, setProductDropdownOpen] = useState(false);
+  const [insightsCollapsed, setInsightsCollapsed] = useState(false);
+  const navigate = useNavigate();
 
   // ✅ v2.51.0: Query principal (MoM - Month over Month)
   const { data: stats, isLoading } = useApiQuery<DashboardStats>(
@@ -206,39 +217,102 @@ export function Dashboard() {
     });
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
+    <div className="space-y-4 md:space-y-8 animate-in fade-in duration-500">
       {/* Page Header */}
-      <div className="flex justify-between items-end">
-        <div>
-          <h1 className={`text-3xl font-bold ${isDark ? 'text-white' : 'text-zinc-900'}`}>
-            Dashboard
-          </h1>
-          <p className="text-zinc-500">Bem-vindo de volta! Aqui está o resumo de hoje.</p>
-        </div>
-        {/* ✅ v2.51.0: Apenas filtro de produto (removido filtro de tempo global) */}
-        <div className="flex gap-2">
-          {PRODUCT_OPTIONS.length > 2 && (
-            <select
-              value={product}
-              onChange={(e) => setProduct(e.target.value)}
-              className={`text-xs rounded-lg px-4 py-2 outline-none border ${
-                isDark
-                  ? 'bg-zinc-800 border-zinc-700 text-zinc-300'
-                  : 'bg-zinc-200 hover:bg-zinc-300 border-zinc-300 text-zinc-800'
-              } transition-colors`}
-            >
-              {PRODUCT_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          )}
+      <div className="flex flex-col gap-3 md:flex-row md:justify-between md:items-end">
+        <div className="flex items-center gap-3">
+          <div className={`p-2.5 rounded-xl ${isDark ? 'bg-zinc-800' : 'bg-zinc-100'}`}>
+            <LayoutDashboard size={20} className="text-nexus-orange" />
+          </div>
+          <div>
+            <h1 className={`text-xl md:text-3xl font-bold ${isDark ? 'text-white' : 'text-zinc-900'}`}>
+              Dashboard
+            </h1>
+            <p className="text-xs md:text-sm text-zinc-500">Resumo do mês</p>
+          </div>
         </div>
       </div>
 
+      {/* Product filter — full width on mobile */}
+      {PRODUCT_OPTIONS.length > 2 && (
+        <div className="md:hidden relative">
+          <button
+            onClick={() => setProductDropdownOpen(!productDropdownOpen)}
+            className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border text-sm font-semibold cursor-pointer transition-all ${
+              isDark ? 'bg-zinc-900 border-zinc-700 text-zinc-100' : 'bg-white border-zinc-200 text-zinc-800 shadow-sm'
+            }`}
+          >
+            <span className="flex items-center gap-2">
+              <Filter size={16} className="text-nexus-orange" />
+              {PRODUCT_OPTIONS.find(o => o.value === product)?.label || 'Todos os produtos'}
+            </span>
+            <ChevronDown size={16} className={cn('transition-transform', productDropdownOpen && 'rotate-180', isDark ? 'text-zinc-500' : 'text-zinc-400')} />
+          </button>
+          {productDropdownOpen && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setProductDropdownOpen(false)} />
+              <div className={cn(
+                'absolute left-0 right-0 top-[calc(100%+4px)] z-20 rounded-xl border shadow-xl overflow-hidden',
+                isDark ? 'bg-zinc-900 border-zinc-700' : 'bg-white border-zinc-200'
+              )}>
+                {PRODUCT_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => { setProduct(opt.value); setProductDropdownOpen(false); }}
+                    className={cn(
+                      'w-full text-left px-4 py-3 text-sm font-medium transition-colors',
+                      product === opt.value ? 'text-nexus-orange bg-nexus-orange/5' : isDark ? 'text-zinc-300 hover:bg-zinc-800' : 'text-zinc-600 hover:bg-zinc-50'
+                    )}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+      {/* Desktop product filter — inline */}
+      {PRODUCT_OPTIONS.length > 2 && (
+        <div className="hidden md:flex gap-2 -mt-4">
+          <div className="relative">
+            <button
+              onClick={() => setProductDropdownOpen(!productDropdownOpen)}
+              className={`flex items-center gap-2 text-xs rounded-lg px-4 py-2 border font-medium transition-all ${
+                isDark ? 'bg-zinc-800 border-zinc-700 text-zinc-300 hover:bg-zinc-700' : 'bg-zinc-100 hover:bg-zinc-200 border-zinc-200 text-zinc-800'
+              }`}
+            >
+              {PRODUCT_OPTIONS.find(o => o.value === product)?.label || 'Todos os produtos'}
+              <ChevronDown size={14} className={cn('transition-transform', productDropdownOpen && 'rotate-180', isDark ? 'text-zinc-500' : 'text-zinc-400')} />
+            </button>
+            {productDropdownOpen && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setProductDropdownOpen(false)} />
+                <div className={cn(
+                  'absolute left-0 top-[calc(100%+4px)] z-20 w-48 rounded-xl border shadow-xl overflow-hidden',
+                  isDark ? 'bg-zinc-900 border-zinc-700' : 'bg-white border-zinc-200'
+                )}>
+                  {PRODUCT_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.value}
+                      onClick={() => { setProduct(opt.value); setProductDropdownOpen(false); }}
+                      className={cn(
+                        'w-full text-left px-4 py-2.5 text-sm font-medium transition-colors',
+                        product === opt.value ? 'text-nexus-orange bg-nexus-orange/5' : isDark ? 'text-zinc-300 hover:bg-zinc-800' : 'text-zinc-600 hover:bg-zinc-50'
+                      )}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Metrics Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6">
         <MetricCard
           title="Total de Clientes"
           value={stats.kpis.totalClients}
@@ -280,18 +354,18 @@ export function Dashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* IA Insights - v2.49.0: Real AI-powered insights */}
         <div
-          className={`lg:col-span-2 border p-6 rounded-2xl relative overflow-hidden group transition-all duration-300 ${
+          className={`lg:col-span-2 border p-3 md:p-6 rounded-2xl relative overflow-hidden group transition-all duration-300 ${
             isDark
               ? 'bg-gradient-to-br from-zinc-900 to-zinc-800 border-zinc-700'
               : 'bg-white border-zinc-200 shadow-sm'
           }`}
         >
           <div className="relative z-10">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-2 text-nexus-orange">
-                  <Sparkles size={20} />
-                  <span className="text-sm font-bold uppercase tracking-wider">
+            <div className="flex items-center justify-between mb-3 md:mb-4">
+              <div className="flex items-center gap-2 md:gap-3">
+                <div className="flex items-center gap-1.5 md:gap-2 text-nexus-orange">
+                  <Sparkles size={18} className="md:w-5 md:h-5" />
+                  <span className="text-xs md:text-sm font-bold uppercase tracking-wider">
                     Insights da IA
                   </span>
                 </div>
@@ -321,26 +395,36 @@ export function Dashboard() {
               <button
                 onClick={() => setInsightsRefreshKey((k) => k + 1)}
                 disabled={insightsLoading}
-                className="text-xs text-zinc-500 hover:text-nexus-orange transition-colors flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Atualizar insights"
+                className="text-zinc-500 hover:text-nexus-orange transition-colors flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed p-1.5 rounded-lg"
               >
                 <RefreshCw size={14} className={insightsLoading ? 'animate-spin' : ''} />
-                Atualizar
+                <span className="hidden md:inline text-xs">Atualizar</span>
               </button>
             </div>
-            <h2
-              className={`text-xl font-bold mb-6 ${isDark ? 'text-white' : 'text-zinc-900'}`}
+            <button
+              onClick={() => setInsightsCollapsed(!insightsCollapsed)}
+              className={`flex items-center justify-between w-full mb-3 md:mb-6 md:cursor-default`}
             >
-              Nexus Intel
-            </h2>
+              <h2 className={`text-base md:text-xl font-bold ${isDark ? 'text-white' : 'text-zinc-900'}`}>
+                Nexus Intel
+              </h2>
+              <div className="md:hidden">
+                {insightsCollapsed
+                  ? <ChevronDown size={18} className="text-zinc-500" />
+                  : <ChevronUp size={18} className="text-zinc-500" />
+                }
+              </div>
+            </button>
 
-            {insightsLoading ? (
+            {insightsCollapsed ? null : insightsLoading ? (
               <div className="space-y-4">
                 {[1, 2, 3].map((i) => (
                   <div
                     key={i}
                     className={`${
                       isDark ? 'bg-zinc-950/50 border-zinc-700/50' : 'bg-zinc-50 border-zinc-200'
-                    } p-4 rounded-xl border flex items-start gap-4`}
+                    } p-3 md:p-4 rounded-xl border flex items-start gap-2 md:gap-4`}
                   >
                     <div className="w-2 h-2 mt-2 rounded-full bg-zinc-700 animate-pulse"></div>
                     <div className="flex-1 space-y-2">
@@ -367,7 +451,7 @@ export function Dashboard() {
               <div
                 className={`${
                   isDark ? 'bg-zinc-950/50 border-zinc-700/50' : 'bg-zinc-50 border-zinc-200'
-                } p-4 rounded-xl border flex items-start gap-4`}
+                } p-3 md:p-4 rounded-xl border flex items-start gap-2 md:gap-4`}
               >
                 <div className="w-2 h-2 mt-2 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]"></div>
                 <div className="flex-1">
@@ -392,7 +476,7 @@ export function Dashboard() {
                     key={idx}
                     className={`${
                       isDark ? 'bg-zinc-950/50 border-zinc-700/50' : 'bg-zinc-50 border-zinc-200'
-                    } p-4 rounded-xl border flex items-start gap-4`}
+                    } p-3 md:p-4 rounded-xl border flex items-start gap-2 md:gap-4`}
                   >
                     <div
                       className={`w-2 h-2 mt-2 rounded-full ${
@@ -429,16 +513,16 @@ export function Dashboard() {
 
         {/* Distribution Chart */}
         <div
-          className={`border p-6 rounded-2xl transition-all duration-300 ${
+          className={`border p-4 md:p-6 rounded-2xl transition-all duration-300 ${
             isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200 shadow-sm'
           }`}
         >
           <h3
-            className={`text-lg font-bold mb-6 ${isDark ? 'text-white' : 'text-zinc-900'}`}
+            className={`text-base md:text-lg font-bold mb-4 md:mb-6 ${isDark ? 'text-white' : 'text-zinc-900'}`}
           >
             Distribuição por Plano
           </h3>
-          <div className="h-64">
+          <div className="h-48 md:h-64">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
@@ -488,16 +572,16 @@ export function Dashboard() {
 
       {/* Main MRR Chart */}
       <div
-        className={`border p-6 rounded-2xl transition-all duration-300 ${
+        className={`border p-4 md:p-6 rounded-2xl transition-all duration-300 ${
           isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200 shadow-sm'
         }`}
       >
-        <div className="flex justify-between items-center mb-8">
+        <div className="flex justify-between items-center mb-4 md:mb-8">
           <div>
-            <h3 className={`text-lg font-bold ${isDark ? 'text-white' : 'text-zinc-900'}`}>
+            <h3 className={`text-base md:text-lg font-bold ${isDark ? 'text-white' : 'text-zinc-900'}`}>
               Evolução do MRR
             </h3>
-            <p className="text-zinc-500 text-xs">
+            <p className="text-zinc-500 text-[10px] md:text-xs">
               Crescimento anual de receita recorrente
             </p>
           </div>
@@ -523,7 +607,7 @@ export function Dashboard() {
             ))}
           </div>
         </div>
-        <div className="h-80">
+        <div className="h-44 md:h-80">
           {revenueOverTimeData.length > 0 ? (
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={revenueOverTimeData}>
@@ -580,16 +664,70 @@ export function Dashboard() {
       </div>
 
       {/* Recent Activities - v2.48.0 (Expandable Cards) */}
+      {/* Mobile activity dropdown */}
+      {(() => {
+        const ACTIVITY_TABS = [
+          { key: 'leads' as const, label: 'Leads Recentes', icon: Briefcase },
+          { key: 'clients' as const, label: 'Novos Clientes', icon: UserPlus },
+          { key: 'payments' as const, label: 'Próximos Vencimentos', icon: Clock },
+        ];
+        const activeItem = ACTIVITY_TABS.find(t => t.key === activeActivityTab) || ACTIVITY_TABS[0];
+        const ActiveIcon = activeItem.icon;
+        return (
+          <div className="md:hidden relative">
+            <button
+              onClick={() => setActivityDropdownOpen(!activityDropdownOpen)}
+              className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border text-sm font-semibold cursor-pointer transition-all ${
+                isDark
+                  ? 'bg-zinc-900 border-zinc-700 text-zinc-100'
+                  : 'bg-white border-zinc-200 text-zinc-800 shadow-sm'
+              }`}
+            >
+              <span className="flex items-center gap-2">
+                <ActiveIcon size={16} className="text-nexus-orange" />
+                {activeItem.label}
+              </span>
+              <ChevronDown size={16} className={cn('transition-transform', activityDropdownOpen && 'rotate-180', isDark ? 'text-zinc-500' : 'text-zinc-400')} />
+            </button>
+            {activityDropdownOpen && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setActivityDropdownOpen(false)} />
+                <div className={cn(
+                  'absolute left-0 right-0 top-[calc(100%+4px)] z-20 rounded-xl border shadow-xl overflow-hidden',
+                  isDark ? 'bg-zinc-900 border-zinc-700' : 'bg-white border-zinc-200'
+                )}>
+                  {ACTIVITY_TABS.filter(({ key }) => key !== activeActivityTab).map(({ key, label, icon: Icon }) => (
+                    <button
+                      key={key}
+                      onClick={() => { setActiveActivityTab(key); setActivityDropdownOpen(false); }}
+                      className={cn(
+                        'w-full flex items-center gap-3 px-4 py-3 text-sm font-medium transition-colors',
+                        isDark ? 'text-zinc-300 hover:bg-zinc-800' : 'text-zinc-600 hover:bg-zinc-50'
+                      )}
+                    >
+                      <Icon size={16} />
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        );
+      })()}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Leads Card */}
+        <div className={cn('md:block', activeActivityTab === 'leads' ? 'block' : 'hidden')}>
         <ExpandableActivityCard
           title="Leads Recentes"
           icon={Briefcase}
           initialItems={stats.recentActivity.recentLeads}
           fetchMore={fetchPaginatedLeads}
+          hideHeader
           renderItem={(lead) => (
             <div
-              className={`p-3 rounded-xl border ${
+              onClick={() => navigate('/leads')}
+              className={`p-3 rounded-xl border cursor-pointer active:scale-[0.98] transition-transform ${
                 isDark ? 'bg-zinc-800/50 border-zinc-700/50' : 'bg-zinc-50 border-zinc-200'
               }`}
             >
@@ -609,16 +747,20 @@ export function Dashboard() {
           viewAllLabel="Ver todos os leads"
           isDark={isDark}
         />
+        </div>
 
         {/* Clients Card */}
+        <div className={cn('md:block', activeActivityTab === 'clients' ? 'block' : 'hidden')}>
         <ExpandableActivityCard
           title="Novos Clientes"
           icon={UserPlus}
           initialItems={stats.recentActivity.recentClients}
           fetchMore={fetchPaginatedClients}
+          hideHeader
           renderItem={(client) => (
             <div
-              className={`p-3 rounded-xl border ${
+              onClick={() => navigate('/clients')}
+              className={`p-3 rounded-xl border cursor-pointer active:scale-[0.98] transition-transform ${
                 isDark ? 'bg-zinc-800/50 border-zinc-700/50' : 'bg-zinc-50 border-zinc-200'
               }`}
             >
@@ -646,16 +788,20 @@ export function Dashboard() {
           viewAllLabel="Ver todos os clientes"
           isDark={isDark}
         />
+        </div>
 
         {/* Payments Card */}
+        <div className={cn('md:block', activeActivityTab === 'payments' ? 'block' : 'hidden')}>
         <ExpandableActivityCard
           title="Próximos Vencimentos"
           icon={Clock}
           initialItems={stats.recentActivity.upcomingPayments}
           fetchMore={fetchPaginatedPayments}
+          hideHeader
           renderItem={(payment) => (
             <div
-              className={`p-3 rounded-xl border ${
+              onClick={() => navigate('/finance')}
+              className={`p-3 rounded-xl border cursor-pointer active:scale-[0.98] transition-transform ${
                 isDark ? 'bg-zinc-800/50 border-zinc-700/50' : 'bg-zinc-50 border-zinc-200'
               }`}
             >
@@ -677,6 +823,7 @@ export function Dashboard() {
           viewAllLabel="Ver todos os vencimentos"
           isDark={isDark}
         />
+        </div>
       </div>
     </div>
   );

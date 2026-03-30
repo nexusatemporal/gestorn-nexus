@@ -7,7 +7,8 @@ import {
 import { PrismaService } from '@/prisma/prisma.service';
 import { CreatePlanDto } from './dto/create-plan.dto';
 import { UpdatePlanDto } from './dto/update-plan.dto';
-import { ProductType } from '@prisma/client';
+import { ProductType, TenantProvisioningStatus } from '@prisma/client';
+import { OneNexusService, OneNexusModuleTree } from '../integrations/one-nexus/one-nexus.service';
 
 /**
  * Plans Service
@@ -17,7 +18,10 @@ import { ProductType } from '@prisma/client';
 export class PlansService {
   private readonly logger = new Logger(PlansService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly oneNexusService: OneNexusService,
+  ) {}
 
   /**
    * ✅ v2.44.2: Converte Prisma Decimal para Number (padrão fintech)
@@ -192,5 +196,37 @@ export class PlansService {
 
     this.logger.log(`✅ Plano reativado: ${plan.name} (${plan.code})`);
     return updated;
+  }
+
+  /**
+   * Retorna o catálogo completo de módulos do One Nexus (árvore hierárquica).
+   * Usa qualquer tenant provisionado como referência e retorna tudo com isEnabled: false.
+   */
+  async getModulesCatalog(): Promise<OneNexusModuleTree[]> {
+    const tenant = await this.prisma.tenant.findFirst({
+      where: {
+        tenantUuid: { not: null },
+        provisioningStatus: TenantProvisioningStatus.PROVISIONED,
+      },
+      select: { tenantUuid: true },
+    });
+
+    if (!tenant?.tenantUuid) {
+      this.logger.warn('⚠️ Nenhum tenant provisionado encontrado para catálogo de módulos');
+      return [];
+    }
+
+    const tree = await this.oneNexusService.getModulesTree(tenant.tenantUuid);
+    if (!tree) return [];
+
+    // Retornar todos os módulos com isEnabled: false (template para o plano)
+    return tree.map((parent) => ({
+      ...parent,
+      isEnabled: false,
+      children: parent.children.map((child) => ({
+        ...child,
+        isEnabled: false,
+      })),
+    }));
   }
 }

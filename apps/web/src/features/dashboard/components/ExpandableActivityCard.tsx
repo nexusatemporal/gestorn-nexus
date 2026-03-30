@@ -23,6 +23,7 @@ interface ExpandableActivityCardProps<T> {
   emptyMessage: string;
   viewAllLabel: string;
   isDark: boolean;
+  hideHeader?: boolean;
 }
 
 export function ExpandableActivityCard<T extends { id: string }>({
@@ -34,6 +35,7 @@ export function ExpandableActivityCard<T extends { id: string }>({
   emptyMessage,
   viewAllLabel,
   isDark,
+  hideHeader,
 }: ExpandableActivityCardProps<T>) {
   const { isExpanded, toggle } = useExpand();
   const { page, limit, nextPage, prevPage, reset } = usePagination();
@@ -73,24 +75,24 @@ export function ExpandableActivityCard<T extends { id: string }>({
 
   return (
     <div
-      className={`border p-6 rounded-2xl transition-all duration-300 ${
+      className={`border p-3 md:p-6 rounded-2xl transition-all duration-300 ${
         isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200 shadow-sm'
       }`}
     >
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      {/* Header — hidden on mobile when dropdown already shows the title */}
+      <div className={`flex items-center justify-between mb-3 md:mb-6 ${hideHeader ? 'hidden md:flex' : ''}`}>
         <div className="flex items-center gap-2">
           <div className={`p-2 rounded-lg ${isDark ? 'bg-zinc-800' : 'bg-zinc-100'}`}>
-            <Icon size={18} className="text-nexus-orange" />
+            <Icon size={16} className="text-nexus-orange md:w-[18px] md:h-[18px]" />
           </div>
-          <h3 className={`text-lg font-bold ${isDark ? 'text-white' : 'text-zinc-900'}`}>
+          <h3 className={`text-sm md:text-lg font-bold ${isDark ? 'text-white' : 'text-zinc-900'}`}>
             {title}
           </h3>
         </div>
       </div>
 
       {/* Items List */}
-      <div className="space-y-3">
+      <div className="space-y-2 md:space-y-3">
         {isLoading ? (
           <div className="flex items-center justify-center py-8">
             <Loader2 size={24} className="animate-spin text-nexus-orange" />
@@ -118,7 +120,7 @@ export function ExpandableActivityCard<T extends { id: string }>({
       {/* Toggle Button */}
       <button
         onClick={handleToggle}
-        className="mt-4 w-full text-nexus-orange text-sm font-semibold hover:underline flex items-center justify-center gap-1 transition-all hover:gap-2"
+        className="mt-3 md:mt-4 w-full text-nexus-orange text-xs md:text-sm font-semibold hover:underline flex items-center justify-center gap-1 transition-all active:scale-95"
       >
         {isExpanded ? (
           <>

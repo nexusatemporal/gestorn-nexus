@@ -30,6 +30,7 @@ services:
     environment:
       - NODE_ENV=production
       - DATABASE_URL=${DATABASE_URL}
+      - CORS_ORIGINS=https://gestornx.nexusatemporal.com,https://lpone.nexusatemporal.com.br
       # JWT Auth próprio (v2.54.0 - substitui Clerk)
       - JWT_SECRET=${JWT_SECRET}
       - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
@@ -51,10 +52,21 @@ services:
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
       - GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI}
+      - GOOGLE_WEBHOOK_URL=${GOOGLE_WEBHOOK_URL:-https://apigestor.nexusatemporal.com/api/v1/calendar/google/webhook}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
       - FRONTEND_URL=${FRONTEND_URL:-https://gestornx.nexusatemporal.com}
       - ONE_NEXUS_API_URL=${ONE_NEXUS_API_URL:-https://apione.nexusatemporal.com.br/api}
       - ONE_NEXUS_API_KEY=${ONE_NEXUS_API_KEY:-}
+      - CHAT_NEXUS_API_URL=${CHAT_NEXUS_API_URL:-https://apichat.nexusatemporal.com.br/api/v1}
+      - CHAT_NEXUS_CLIENT_ID=${CHAT_NEXUS_CLIENT_ID:-nxc_partner_gestornexus}
+      - CHAT_NEXUS_CLIENT_SECRET=${CHAT_NEXUS_CLIENT_SECRET:-}
+      - CHAT_NEXUS_WEBHOOK_SECRET=${CHAT_NEXUS_WEBHOOK_SECRET:-}
+      - CHAT_NEXUS_FRONTEND_URL=${CHAT_NEXUS_FRONTEND_URL:-https://chat.nexusatemporal.com.br}
+      - CHAT_NEXUS_TENANT_ID=${CHAT_NEXUS_TENANT_ID:-cmmfezst5000387vm8arn5p19}
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL:-}
+      - VAPID_PUBLIC_KEY=${VAPID_PUBLIC_KEY:-}
+      - VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY:-}
+      - VAPID_SUBJECT=${VAPID_SUBJECT:-mailto:suporte@nexusatemporal.com}
     networks:
       - netnexus143
       - internal
@@ -100,7 +112,7 @@ services:
         # Headers de segurança
         - "traefik.http.middlewares.gestor-api-headers.headers.accesscontrolallowmethods=GET,POST,PUT,PATCH,DELETE,OPTIONS"
         - "traefik.http.middlewares.gestor-api-headers.headers.accesscontrolallowheaders=Content-Type,Authorization"
-        - "traefik.http.middlewares.gestor-api-headers.headers.accesscontrolalloworiginlist=https://gestornx.nexusatemporal.com,https://www.gestornx.nexusatemporal.com"
+        - "traefik.http.middlewares.gestor-api-headers.headers.accesscontrolalloworiginlist=https://gestornx.nexusatemporal.com,https://www.gestornx.nexusatemporal.com,https://lpone.nexusatemporal.com.br"
         - "traefik.http.middlewares.gestor-api-headers.headers.accesscontrolmaxage=100"
         - "traefik.http.middlewares.gestor-api-headers.headers.addvaryheader=true"
 

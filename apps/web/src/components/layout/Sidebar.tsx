@@ -11,6 +11,9 @@ import {
   ChevronRight,
   ShieldAlert,
   Truck,
+  Bell,
+  ClipboardList,
+  MessageCircle,
 } from 'lucide-react';
 import { useUIStore } from '@/stores/useUIStore';
 import { cn } from '@/utils/cn';
@@ -45,6 +48,9 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Clientes Nexloc', href: '/clients-locadoras', icon: Truck },
   { label: 'Calendário', href: '/calendar', icon: CalendarIcon },
   { label: 'Financeiro', href: '/finance', icon: DollarSign },
+  { label: 'Formulários', href: '/forms', icon: ClipboardList },
+  { label: 'Chat', href: '/chat', icon: MessageCircle },
+  { label: 'Notificações', href: '/notifications', icon: Bell },
   { label: 'Configurações', href: '/settings', icon: Settings },
 ];
 
@@ -55,7 +61,7 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        'flex flex-col h-full transition-all duration-300 ease-in-out z-30 border-r',
+        'hidden md:flex flex-col h-full transition-all duration-300 ease-in-out z-30 border-r',
         sidebarCollapsed ? 'w-20' : 'w-64',
         isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200'
       )}
@@ -65,29 +71,23 @@ export function Sidebar() {
       {/* ════════════════════════════════════════════════════════════════ */}
       <div
         className={cn(
-          'p-6 flex items-center justify-between border-b h-20',
+          'px-4 flex items-center justify-center border-b h-20',
           isDark ? 'border-zinc-800' : 'border-zinc-200'
         )}
       >
         {!sidebarCollapsed && (
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-nexus-orange rounded-lg flex items-center justify-center font-bold text-white shadow-lg shadow-nexus-orange/20">
-              N
-            </div>
-            <span
-              className={cn(
-                'font-bold text-xl tracking-tight',
-                isDark ? 'text-white' : 'text-zinc-900'
-              )}
-            >
-              Gestor<span className="text-nexus-orange">Nexus</span>
-            </span>
-          </div>
+          <img
+            src={isDark ? '/logos/logo-dark.png' : '/logos/logo-light.png'}
+            alt="Nexus Atemporal"
+            className="h-10 w-auto object-contain"
+          />
         )}
         {sidebarCollapsed && (
-          <div className="w-8 h-8 bg-nexus-orange rounded-lg flex items-center justify-center font-bold text-white mx-auto shadow-lg shadow-nexus-orange/20">
-            N
-          </div>
+          <img
+            src={isDark ? '/logos/icon-dark.png' : '/logos/icon-light.png'}
+            alt="Nexus Atemporal"
+            className="h-10 w-10 object-contain mx-auto"
+          />
         )}
       </div>
 

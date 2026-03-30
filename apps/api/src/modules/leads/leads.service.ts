@@ -14,7 +14,8 @@ import { LeadScoreService } from './services/lead-score.service';
 import { SubscriptionService } from '../subscriptions/subscriptions.service';
 import { TenantsService } from '../tenants/tenants.service';
 import { parseDateBrasilia, nowBrasilia } from '../../common/utils/date.utils';
-import { UserRole, LeadStatus, ProductType, ClientStatus, BillingCycle } from '@prisma/client';
+import { UserRole, LeadStatus, ProductType, ClientStatus, BillingCycle, NotificationType } from '@prisma/client';
+import { NotificationsService } from '../notifications/notifications.service';
 
 /**
  * Leads Service
@@ -38,6 +39,7 @@ export class LeadsService {
     private readonly leadScoreService: LeadScoreService,
     private readonly subscriptionService: SubscriptionService,
     private readonly tenantsService: TenantsService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   /**
@@ -371,6 +373,36 @@ export class LeadsService {
       // Não falhar a criação do lead se o score falhar
     }
 
+    // ✅ v2.58.0: Notificar vendedor sobre novo lead atribuído
+    if (lead.vendedorId) {
+      this.notificationsService.create({
+        userId: lead.vendedorId,
+        type: NotificationType.LEAD_ASSIGNED,
+        title: 'Novo lead atribuído',
+        message: `${lead.companyName || lead.name} (${lead.email}) foi atribuído a você.`,
+        link: '/leads',
+      }).catch(() => {}); // Fire-and-forget, não bloqueia
+
+      // ✅ v2.60.0: Notificar gestor do vendedor sobre novo lead na equipe
+      this.prisma.user.findUnique({
+        where: { id: lead.vendedorId },
+        select: { gestorId: true, name: true },
+      }).then((vendedor) => {
+        if (vendedor?.gestorId) {
+          const vendedorNome = vendedor.name || 'Vendedor';
+          const leadNome = lead.companyName || lead.name || lead.email;
+          this.notificationsService.create({
+            userId: vendedor.gestorId,
+            type: NotificationType.NEW_LEAD,
+            title: 'Novo lead na equipe',
+            message: `${leadNome} foi criado por ${vendedorNome}.`,
+            link: '/leads',
+            metadata: { leadId: lead.id, vendedorId: lead.vendedorId },
+          }).catch(() => {});
+        }
+      }).catch(() => {});
+    }
+
     return lead;
   }
 
@@ -540,9 +572,9 @@ export class LeadsService {
       if (hasRequiredData) {
         // Conversão automática: criar cliente baseado no interestProduct
         try {
-          // Verificar se já existe cliente com este CPF/CNPJ
-          const existingClient = await this.prisma.client.findUnique({
-            where: { cpfCnpj: lead.cpfCnpj! },
+          // Verificar se já existe cliente com este CPF/CNPJ (ignora CANCELADOS)
+          const existingClient = await this.prisma.client.findFirst({
+            where: { cpfCnpj: lead.cpfCnpj!, status: { not: 'CANCELADO' as any } },
           });
 
           if (!existingClient) {
@@ -680,6 +712,17 @@ export class LeadsService {
       // Não falhar a atualização do lead se o score falhar
     }
 
+    // ✅ v2.58.0: Notificar novo vendedor quando lead for reatribuído
+    if (dto.vendedorId && dto.vendedorId !== lead.vendedorId) {
+      this.notificationsService.create({
+        userId: dto.vendedorId,
+        type: NotificationType.LEAD_ASSIGNED,
+        title: 'Lead atribuído a você',
+        message: `${updated.companyName || updated.name} foi transferido para você.`,
+        link: '/leads',
+      }).catch(() => {});
+    }
+
     // Se foi marcado como GANHO, incluir metadata de conversão mesmo sem conversão automática
     if (updated.status === LeadStatus.GANHO && updated.interestPlan) {
       return {
@@ -707,6 +750,7 @@ export class LeadsService {
     // PostgreSQL REGEXP_REPLACE remove todos os caracteres não-numéricos
 
     // Verificar em clientes primeiro (prioridade mais alta)
+    // ✅ v2.63.2: Ignorar clientes CANCELADOS — podem ser recriados com mesmo CNPJ
     const existingClient = await this.prisma.$queryRaw<Array<{
       id: string;
       company: string;
@@ -723,6 +767,7 @@ export class LeadsService {
       FROM "Client" c
       LEFT JOIN "User" u ON c."vendedorId" = u.id
       WHERE REGEXP_REPLACE(c."cpfCnpj", '[^0-9]', '', 'g') = ${cleanCnpj}
+        AND c.status != 'CANCELADO'
       LIMIT 1
     `;
 
@@ -743,6 +788,7 @@ export class LeadsService {
     }
 
     // Verificar em leads
+    // ✅ v2.63.2: Ignorar leads CONVERTIDO/GANHO/PERDIDO — já finalizados, não bloqueiam novo cadastro
     const existingLead = await this.prisma.$queryRaw<Array<{
       id: string;
       companyName: string;
@@ -761,6 +807,7 @@ export class LeadsService {
       FROM "Lead" l
       LEFT JOIN "User" u ON l."vendedorId" = u.id
       WHERE REGEXP_REPLACE(l."cpfCnpj", '[^0-9]', '', 'g') = ${cleanCnpj}
+        AND l.status NOT IN ('CONVERTIDO', 'GANHO', 'PERDIDO')
       LIMIT 1
     `;
 
@@ -1011,10 +1058,10 @@ export class LeadsService {
       },
     });
 
-    // 4. ✅ CORREÇÃO v2.28.0: Verificar se CPF/CNPJ já existe
+    // 4. ✅ CORREÇÃO v2.28.0: Verificar se CPF/CNPJ já existe (ignora CANCELADOS)
     if (lead.cpfCnpj && lead.cpfCnpj !== 'PENDING') {
-      const existingClient = await this.prisma.client.findUnique({
-        where: { cpfCnpj: lead.cpfCnpj },
+      const existingClient = await this.prisma.client.findFirst({
+        where: { cpfCnpj: lead.cpfCnpj, status: { not: 'CANCELADO' as any } },
       });
 
       if (existingClient) {
@@ -1178,6 +1225,18 @@ export class LeadsService {
     const moduleName = plan.product === ProductType.ONE_NEXUS ? 'Clientes One Nexus' : 'Clientes NexLoc';
 
     this.logger.log(`🎉 Conversão concluída! Cliente agora em: ${moduleName}`);
+
+    // ✅ v2.58.0: Notificar vendedor sobre lead convertido
+    if (lead.vendedorId) {
+      this.notificationsService.create({
+        userId: lead.vendedorId,
+        type: NotificationType.LEAD_CONVERTED,
+        title: 'Lead convertido em cliente! 🎉',
+        message: `${result.client.company} agora é um cliente ativo.`,
+        link: '/clients',
+        metadata: { clientId: result.client.id },
+      }).catch(() => {});
+    }
 
     return {
       client: result.client,

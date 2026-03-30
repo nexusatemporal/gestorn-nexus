@@ -10,7 +10,7 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { CreateTenantDto } from './dto/create-tenant.dto';
 import { UpdateTenantDto } from './dto/update-tenant.dto';
 import { UserRole, TenantStatus } from '@prisma/client';
-import { OneNexusService } from '../integrations/one-nexus/one-nexus.service';
+import { OneNexusService, OneNexusModuleTree } from '../integrations/one-nexus/one-nexus.service';
 
 /**
  * Tenants Service
@@ -40,11 +40,11 @@ export class TenantsService {
    * Em caso de falha, salva o erro mas não interrompe o fluxo do cliente.
    */
   async provisionOnOneNexus(clientId: string): Promise<void> {
-    // Buscar client com dados necessários
+    // Buscar client com dados necessários (incluindo módulos do plano)
     const client = await this.prisma.client.findUnique({
       where: { id: clientId },
       include: {
-        plan: { select: { name: true, code: true } },
+        plan: { select: { name: true, code: true, includedModules: true } },
         vendedor: { select: { name: true } },
       },
     });
@@ -103,20 +103,122 @@ export class TenantsService {
         `[OneNexus] ✅ Tenant provisionado: ${client.company} | ` +
         `ID: ${result.tenant.id} | Schema: ${result.tenant.schemaName}`,
       );
-    } else {
-      // Falha: salvar erro e manter FAILED (não quebra o fluxo do cliente)
-      await this.prisma.tenant.update({
-        where: { id: tenant.id },
-        data: {
-          provisioningStatus: 'FAILED',
-          provisioningError: 'Falha ao comunicar com a API do One Nexus. Provisione manualmente.',
-        },
-      });
 
+      // ✅ Aplicar módulos do plano automaticamente (fire-and-forget)
+      await this.applyPlanModules(result.tenant.id, client.plan?.includedModules, client.company);
+    } else {
+      // Falha na resposta — mas o tenant PODE ter sido criado no One Nexus (ex: 502 Bad Gateway).
+      // Tentar recovery: buscar pelo slug para recuperar o UUID.
       this.logger.warn(
-        `[OneNexus] ⚠️ Provisioning falhou para ${client.company}. ` +
-        `Cliente criado normalmente no Gestor. Provisione manualmente.`,
+        `[OneNexus] ⚠️ Provisioning retornou null para ${client.company}. Tentando recovery por slug...`,
       );
+
+      const recovered = await this.oneNexusService.findBySlug(slug);
+
+      if (recovered) {
+        // Recovery: tenant existe no One Nexus — salvar UUID e marcar como PROVISIONED
+        await this.prisma.tenant.update({
+          where: { id: tenant.id },
+          data: {
+            tenantUuid: recovered.id,
+            provisioningStatus: 'PROVISIONED',
+            provisioningError: null,
+          },
+        });
+
+        this.logger.log(
+          `[OneNexus] ✅ Recovery bem-sucedido: ${client.company} | ` +
+          `UUID recuperado: ${recovered.id} (encontrado via slug '${slug}')`,
+        );
+
+        // ✅ Aplicar módulos do plano automaticamente (fire-and-forget)
+        await this.applyPlanModules(recovered.id, client.plan?.includedModules, client.company);
+      } else {
+        // Recovery falhou — tenant realmente não foi criado
+        await this.prisma.tenant.update({
+          where: { id: tenant.id },
+          data: {
+            provisioningStatus: 'FAILED',
+            provisioningError: 'Falha ao comunicar com a API do One Nexus. Recovery por slug também falhou.',
+          },
+        });
+
+        this.logger.warn(
+          `[OneNexus] ⚠️ Provisioning falhou para ${client.company} e recovery não encontrou tenant. ` +
+          `Cliente criado normalmente no Gestor. Provisione manualmente.`,
+        );
+      }
+    }
+  }
+
+  /**
+   * Aplica os módulos inclusos do plano ao tenant no One Nexus.
+   * Fire-and-forget: se falhar, loga warning mas não interrompe o fluxo.
+   * Pior caso = comportamento atual (admin configura manualmente).
+   */
+  private async applyPlanModules(
+    oneNexusTenantId: string,
+    includedModules: unknown,
+    companyName: string,
+  ): Promise<void> {
+    // includedModules é Json no Prisma — pode ser qualquer coisa
+    if (!Array.isArray(includedModules) || includedModules.length === 0) {
+      this.logger.log(`[OneNexus] Plano sem módulos configurados para ${companyName} — usando padrão do One Nexus`);
+      return;
+    }
+
+    try {
+      // Buscar árvore atual para saber quais módulos existem
+      const tree = await this.oneNexusService.getModulesTree(oneNexusTenantId);
+      if (!tree) {
+        this.logger.warn(`[OneNexus] ⚠️ Não foi possível buscar árvore de módulos para ${companyName}`);
+        return;
+      }
+
+      // Montar lista de toggles: habilitar os do plano, desabilitar o resto
+      const validModuleIds = (includedModules as unknown[]).filter((m): m is string => typeof m === 'string');
+      const selectedIds = new Set(validModuleIds);
+      const toggles: { moduleId: string; isEnabled: boolean }[] = [];
+
+      for (const parent of tree) {
+        toggles.push({ moduleId: parent.id, isEnabled: selectedIds.has(parent.id) });
+        for (const child of parent.children) {
+          toggles.push({ moduleId: child.id, isEnabled: selectedIds.has(child.id) });
+        }
+      }
+
+      const ok = await this.oneNexusService.toggleModules(oneNexusTenantId, toggles);
+
+      if (ok) {
+        const enabledCount = toggles.filter((t) => t.isEnabled).length;
+        this.logger.log(
+          `[OneNexus] ✅ Módulos do plano aplicados: ${companyName} | ` +
+          `${enabledCount}/${toggles.length} habilitados`,
+        );
+      } else {
+        this.logger.warn(
+          `[OneNexus] ⚠️ Falha ao aplicar módulos do plano para ${companyName}. ` +
+          `Configurar manualmente na aba Módulos do cliente.`,
+        );
+      }
+    } catch (error) {
+      this.logger.warn(
+        `[OneNexus] ⚠️ Erro ao aplicar módulos do plano para ${companyName}: ` +
+        `${error?.message || 'Erro desconhecido'}. Configurar manualmente.`,
+      );
+    }
+  }
+
+  /**
+   * Deleta o tenant no One Nexus antes do cascade delete no Gestor.
+   * DEVE ser chamado ANTES do prisma.client.delete() para não perder o tenantUuid.
+   * Graceful degradation: erros são logados, não interrompem o fluxo.
+   */
+  async deleteOnOneNexus(tenantUuid: string): Promise<void> {
+    try {
+      await this.oneNexusService.delete(tenantUuid);
+    } catch (error) {
+      this.logger.error(`[OneNexus] Erro ao deletar tenant ${tenantUuid}: ${error.message}`);
     }
   }
 
@@ -482,6 +584,13 @@ export class TenantsService {
       data: { status: TenantStatus.SUSPENSO },
     });
 
+    // Sincronizar status com One Nexus (graceful degradation)
+    if (tenant.tenantUuid && tenant.provisioningStatus === 'PROVISIONED') {
+      await this.oneNexusService.updateStatus(tenant.tenantUuid, 'suspended').catch((err) =>
+        this.logger.error(`[OneNexus] Falha ao sincronizar suspend para ${tenant.tenantUuid}: ${err.message}`),
+      );
+    }
+
     this.logger.warn(
       `⚠️ Tenant suspenso: ${tenant.systemUrl} - Cliente: ${tenant.client.company}`,
     );
@@ -521,6 +630,13 @@ export class TenantsService {
       where: { id },
       data: { status: TenantStatus.ATIVO },
     });
+
+    // Sincronizar status com One Nexus (graceful degradation)
+    if (tenant.tenantUuid && tenant.provisioningStatus === 'PROVISIONED') {
+      await this.oneNexusService.updateStatus(tenant.tenantUuid, 'active').catch((err) =>
+        this.logger.error(`[OneNexus] Falha ao sincronizar activate para ${tenant.tenantUuid}: ${err.message}`),
+      );
+    }
 
     this.logger.log(
       `✅ Tenant ativado: ${tenant.systemUrl} - Cliente: ${tenant.client.company}`,
@@ -562,6 +678,13 @@ export class TenantsService {
       data: { status: TenantStatus.BLOQUEADO },
     });
 
+    // Sincronizar status com One Nexus (graceful degradation — 'suspended' = bloqueado)
+    if (tenant.tenantUuid && tenant.provisioningStatus === 'PROVISIONED') {
+      await this.oneNexusService.updateStatus(tenant.tenantUuid, 'suspended').catch((err) =>
+        this.logger.error(`[OneNexus] Falha ao sincronizar block para ${tenant.tenantUuid}: ${err.message}`),
+      );
+    }
+
     this.logger.warn(
       `⚠️ Tenant bloqueado: ${tenant.systemUrl} - Cliente: ${tenant.client.company}`,
     );
@@ -598,6 +721,13 @@ export class TenantsService {
       where: { id },
       data: { status: TenantStatus.DELETADO },
     });
+
+    // Sincronizar status com One Nexus (graceful degradation)
+    if (tenant.tenantUuid && tenant.provisioningStatus === 'PROVISIONED') {
+      await this.oneNexusService.updateStatus(tenant.tenantUuid, 'canceled').catch((err) =>
+        this.logger.error(`[OneNexus] Falha ao sincronizar delete para ${tenant.tenantUuid}: ${err.message}`),
+      );
+    }
 
     this.logger.warn(
       `⚠️ Tenant deletado: ${tenant.systemUrl} - Cliente: ${tenant.client.company}`,
@@ -674,5 +804,180 @@ export class TenantsService {
     }
 
     throw new ForbiddenException('Você não tem permissão para acessar este tenant');
+  }
+
+  /**
+   * Retorna lista de módulos disponíveis do One Nexus.
+   * Tenta buscar da API; usa lista padrão como fallback.
+   */
+  async getAvailableModules() {
+    return this.oneNexusService.getModules();
+  }
+
+  /**
+   * Atualiza os módulos habilitados de um tenant.
+   * 1. Salva em Tenant.enabledModules no Gestor
+   * 2. Sincroniza com One Nexus (graceful: erro logado, não lança)
+   */
+  async updateEnabledModules(
+    tenantId: string,
+    modules: string[],
+    currentUserId: string,
+    currentUserRole: UserRole,
+  ) {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      include: { client: { select: { vendedorId: true } } },
+    });
+
+    if (!tenant) throw new NotFoundException(`Tenant ${tenantId} não encontrado`);
+
+    await this.validateAccess(tenant.client?.vendedorId ?? null, currentUserId, currentUserRole);
+
+    // Salvar localmente
+    const updated = await this.prisma.tenant.update({
+      where: { id: tenantId },
+      data: { enabledModules: modules },
+    });
+
+    this.logger.log(
+      `✅ Módulos atualizados localmente: tenant ${tenantId} → [${modules.join(', ')}]`,
+    );
+
+    // Sincronizar com One Nexus (graceful)
+    if (tenant.tenantUuid) {
+      const synced = await this.oneNexusService.updateModules(tenant.tenantUuid, modules);
+      if (!synced) {
+        this.logger.warn(
+          `[OneNexus] ⚠️ Módulos salvos no Gestor mas falha ao sincronizar com One Nexus (tenant ${tenant.tenantUuid})`,
+        );
+      }
+    } else {
+      this.logger.log(`[OneNexus] Tenant ${tenantId} não provisionado — módulos salvos apenas localmente`);
+    }
+
+    return updated;
+  }
+
+  // ════════════════════════════════════════════════════════════════
+  // MÓDULOS V3 — Hierárquicos
+  // ════════════════════════════════════════════════════════════════
+
+  /**
+   * Retorna a árvore hierárquica de módulos do tenant.
+   * Requer tenant provisionado com tenantUuid.
+   */
+  async getModulesTree(
+    tenantId: string,
+    currentUserId: string,
+    currentUserRole: UserRole,
+  ): Promise<OneNexusModuleTree[]> {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      include: { client: { select: { vendedorId: true } } },
+    });
+
+    if (!tenant) throw new NotFoundException(`Tenant ${tenantId} não encontrado`);
+    await this.validateAccess(tenant.client?.vendedorId ?? null, currentUserId, currentUserRole);
+
+    if (!tenant.tenantUuid) {
+      throw new BadRequestException('Tenant não provisionado no One Nexus — tenantUuid ausente');
+    }
+
+    const tree = await this.oneNexusService.getModulesTree(tenant.tenantUuid);
+    if (!tree) {
+      throw new BadRequestException('Não foi possível buscar módulos do One Nexus');
+    }
+    return tree;
+  }
+
+  /**
+   * Toggle individual de módulos com cascata (V3 API).
+   * Envia para One Nexus que aplica as regras de cascata automaticamente.
+   */
+  async toggleModules(
+    tenantId: string,
+    modules: { moduleId: string; isEnabled: boolean }[],
+    currentUserId: string,
+    currentUserRole: UserRole,
+  ): Promise<{ success: boolean }> {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      include: { client: { select: { vendedorId: true } } },
+    });
+
+    if (!tenant) throw new NotFoundException(`Tenant ${tenantId} não encontrado`);
+    await this.validateAccess(tenant.client?.vendedorId ?? null, currentUserId, currentUserRole);
+
+    if (!tenant.tenantUuid) {
+      throw new BadRequestException('Tenant não provisionado no One Nexus');
+    }
+
+    const ok = await this.oneNexusService.toggleModules(tenant.tenantUuid, modules);
+    if (!ok) {
+      throw new BadRequestException('Falha ao atualizar módulos no One Nexus');
+    }
+    return { success: true };
+  }
+
+  /**
+   * Habilita todos os 77 módulos do tenant.
+   */
+  async enableAllModules(
+    tenantId: string,
+    currentUserId: string,
+    currentUserRole: UserRole,
+  ): Promise<{ success: boolean }> {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      include: { client: { select: { vendedorId: true } } },
+    });
+
+    if (!tenant) throw new NotFoundException(`Tenant ${tenantId} não encontrado`);
+    await this.validateAccess(tenant.client?.vendedorId ?? null, currentUserId, currentUserRole);
+
+    if (!tenant.tenantUuid) {
+      throw new BadRequestException('Tenant não provisionado no One Nexus');
+    }
+
+    const ok = await this.oneNexusService.enableAllModules(tenant.tenantUuid);
+    if (!ok) {
+      throw new BadRequestException('Falha ao habilitar todos os módulos no One Nexus');
+    }
+    return { success: true };
+  }
+
+  /**
+   * Aplica preset de módulos ao tenant.
+   * Presets: all, basic, clinical, business, enterprise, none
+   */
+  async applyModulePreset(
+    tenantId: string,
+    preset: string,
+    currentUserId: string,
+    currentUserRole: UserRole,
+  ): Promise<{ success: boolean }> {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      include: { client: { select: { vendedorId: true } } },
+    });
+
+    if (!tenant) throw new NotFoundException(`Tenant ${tenantId} não encontrado`);
+    await this.validateAccess(tenant.client?.vendedorId ?? null, currentUserId, currentUserRole);
+
+    if (!tenant.tenantUuid) {
+      throw new BadRequestException('Tenant não provisionado no One Nexus');
+    }
+
+    const validPresets = ['all', 'basic', 'clinical', 'business', 'enterprise', 'none'];
+    if (!validPresets.includes(preset)) {
+      throw new BadRequestException(`Preset inválido. Válidos: ${validPresets.join(', ')}`);
+    }
+
+    const ok = await this.oneNexusService.applyPreset(tenant.tenantUuid, preset);
+    if (!ok) {
+      throw new BadRequestException(`Falha ao aplicar preset '${preset}' no One Nexus`);
+    }
+    return { success: true };
   }
 }

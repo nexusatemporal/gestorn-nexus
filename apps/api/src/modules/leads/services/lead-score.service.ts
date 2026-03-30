@@ -1,6 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '@/prisma/prisma.service';
-import { Lead, Plan, LeadOrigin, FunnelStage } from '@prisma/client';
+import { NotificationsService } from '../../notifications/notifications.service';
+import { Lead, Plan, LeadOrigin, FunnelStage, NotificationType } from '@prisma/client';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════
@@ -44,10 +46,74 @@ interface LeadWithRelations extends Lead {
 }
 
 @Injectable()
-export class LeadScoreService {
+export class LeadScoreService implements OnModuleInit {
   private readonly logger = new Logger(LeadScoreService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationsService: NotificationsService,
+  ) {}
+
+  onModuleInit() {
+    this.logger.log('📅 Cron opportunity-scan: 10:00 UTC (07:00 BRT)');
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // CRON: OPORTUNIDADES (todo dia às 10:00 UTC = 07:00 BRT)
+  // Detecta leads QUENTES (score >= 75) sem atividade há 7 dias
+  // ══════════════════════════════════════════════════════════════
+
+  @Cron('0 10 * * *', { name: 'opportunity-scan' }) // 10:00 UTC = 07:00 BRT
+  async handleOpportunityScan() {
+    this.logger.log('🎯 [CRON] Iniciando scan de oportunidades...');
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Janela de exatamente 7 dias atrás (dispara uma vez ao cruzar o limiar)
+    const sevenDaysAgo = new Date(today);
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+    const eightDaysAgo = new Date(today);
+    eightDaysAgo.setDate(eightDaysAgo.getDate() - 8);
+
+    // Leads quentes (score >= 75) que cruzaram o limiar de 7 dias de inatividade hoje
+    const hotLeads = await this.prisma.lead.findMany({
+      where: {
+        status: 'ABERTO',
+        score: { gte: 75 },
+        vendedorId: { not: null },
+        OR: [
+          // Tem lastInteractionAt: cruzou a janela de 7 dias
+          { lastInteractionAt: { gte: eightDaysAgo, lt: sevenDaysAgo } },
+          // Não tem lastInteractionAt: usa updatedAt como fallback
+          { lastInteractionAt: null, updatedAt: { gte: eightDaysAgo, lt: sevenDaysAgo } },
+        ],
+      },
+      select: { id: true, name: true, companyName: true, vendedorId: true, score: true },
+      take: 100,
+    });
+
+    this.logger.log(`📋 ${hotLeads.length} oportunidades detectadas (leads quentes sem atividade 7 dias)`);
+
+    for (const lead of hotLeads) {
+      if (!lead.vendedorId) continue;
+
+      const nome = lead.companyName || lead.name || 'Lead';
+      this.notificationsService.create({
+        userId: lead.vendedorId,
+        type: NotificationType.AI_OPPORTUNITY,
+        title: 'Lead quente sem atividade!',
+        message: `${nome} (score ${lead.score}%) está sem interação há 7+ dias. Hora de agir!`,
+        link: '/leads',
+        metadata: { leadId: lead.id, score: lead.score },
+        dedupeKey: lead.id,  // 1 oportunidade por lead por 7 dias
+        throttleHours: 168,
+      }).catch(() => {});
+    }
+
+    this.logger.log('🎯 [CRON] Scan de oportunidades concluído');
+  }
 
   /**
    * Calcula o Lead Score IA baseado em STAGE-BASED SCORING (v2.36.0)
@@ -264,6 +330,22 @@ export class LeadScoreService {
     });
 
     this.logger.log(`✅ Lead Score atualizado: ${lead.name || lead.companyName} = ${score}%`);
+
+    // ✅ v2.58.0: Notificar vendedor se lead cruzou o limiar QUENTE (< 80 → >= 80)
+    const wasQuente = (lead.score || 0) >= 80;
+    if (!wasQuente && score >= 80 && lead.vendedorId) {
+      const nome = lead.companyName || lead.name || 'Lead';
+      this.notificationsService.create({
+        userId: lead.vendedorId,
+        type: NotificationType.AI_LEAD_SCORE,
+        title: 'Lead ficou QUENTE! 🟢',
+        message: `${nome} atingiu score ${score}% e entrou na fase QUENTE.`,
+        link: '/leads',
+        metadata: { leadId: lead.id, score },
+        dedupeKey: lead.id,  // 1 alerta de score por lead (reset automático quando volta a frio)
+        throttleHours: 72,
+      }).catch(() => {});
+    }
 
     return { score, factors };
   }

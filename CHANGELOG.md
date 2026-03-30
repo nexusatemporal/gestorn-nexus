@@ -7,6 +7,608 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ---
 
+## [2.73.0] - 2026-03-30 - Módulos Personalizados nos Planos + Integração One Nexus
+
+### feat(plans): CRUD completo de Planos com árvore hierárquica de módulos One Nexus
+
+#### Backend
+- **feat(plans): CRUD completo** — Endpoints `GET/POST/PUT/DELETE /plans` com validação Zod, soft delete (`isActive`), restore, filtro por `product` e `isActive`. Proteção contra desativação de planos com clientes ativos.
+- **feat(plans): Catálogo de módulos** — Novo endpoint `GET /plans/modules-catalog` que retorna a árvore hierárquica de módulos One Nexus (12 parents + 65 children) como template para configuração de planos.
+- **feat(plans): PlansModule importa OneNexusModule** — Integração direta entre planos e serviço One Nexus para buscar catálogo de módulos.
+- **feat(tenants): Auto-config de módulos no provisioning** — `applyPlanModules()` configura automaticamente os módulos do tenant com base no `includedModules` do plano (fire-and-forget). Fluxo: Plan → Client → Tenant → Módulos aplicados via `PATCH /tenants/{uuid}/modules`.
+
+#### Frontend
+- **feat(settings): Tab "Planos"** — Nova aba em Configurações com listagem de planos, badges de produto/status, contagem de módulos, botões de ação (editar, desativar, reativar).
+- **feat(settings): PlanFormModal com árvore de módulos** — Modal de criação/edição com seletor hierárquico de módulos. Toggle parent/children com cascading automático, contador "X/Y selecionados", ícones por módulo (100+ mapeamentos lucide-react).
+- **feat(settings): 6 presets de módulos** — Botões rápidos: Nenhum, Básico, Clínico, Business, Enterprise, Tudo. Cada preset ativa um conjunto pré-definido de módulos.
+- **feat(settings): API client + hooks** — `plansAdminApi` com TypeScript interfaces + React Query hooks (`usePlans`, `useCreatePlan`, `useUpdatePlan`, `useDeactivatePlan`, `useRestorePlan`, `useModulesCatalog`).
+
+### Arquivos Modificados
+- `apps/api/src/modules/plans/plans.controller.ts` — Endpoints CRUD + modules-catalog
+- `apps/api/src/modules/plans/plans.service.ts` — Service com getModulesCatalog()
+- `apps/api/src/modules/plans/plans.module.ts` — Import OneNexusModule
+- `apps/api/src/modules/tenants/tenants.service.ts` — applyPlanModules() no provisioning
+
+### Arquivos Novos
+- `apps/web/src/features/settings/components/plans/PlansTab.tsx` — Listagem de planos
+- `apps/web/src/features/settings/components/plans/PlanFormModal.tsx` — Modal com árvore de módulos
+- `apps/web/src/features/settings/hooks/usePlansAdmin.ts` — React Query hooks
+- `apps/web/src/features/settings/api/plans-admin.api.ts` — API client + interfaces
+
+---
+
+## [2.72.6] - 2026-03-27 - Mobile: Calendar Polish + Leads Advance/Back + Finance Delete Modal
+
+### feat(mobile): Calendário completamente refinado + navegação de leads por fase
+
+#### Calendário (v2.72.5–v2.72.6)
+- **fix(mobile): Cantos arredondados no header** — `rounded-b-2xl md:rounded-none` no header do calendário.
+- **fix(mobile): Botões Dia/Sem/Mês/Ano mais largos** — `px-5 py-2 text-xs` (mais largos horizontalmente, não mais altos). Revertido `py-3` que ficava muito alto.
+- **feat(mobile): Botão "Novo Evento" full-width** — Botão grande com texto visível no mobile (`w-full py-3.5 text-base`), idêntico ao padrão de Leads/Clientes. Botão original escondido com `hidden md:flex`.
+- **fix(mobile): Dia selecionado com cantos redondos (MonthView)** — `rounded-xl` adicionado ao background do dia selecionado. Antes ficava quadrado.
+- **fix(mobile): Header do calendário fixo** — `shrink-0` no header, week day headers, calendar grid (MonthView) e day tabs (WeekView). Só a lista de eventos scrolla.
+- **fix(mobile): Removido rounded-b-xl desconectado** — WeekView tabs, selected day header e MonthView grid não têm mais cantos arredondados soltos.
+- **feat(mobile): MonthView touch targets maiores** — Day circles `w-9 h-9 text-sm`, week headers `text-xs py-2.5`, event dots `w-2 h-2`.
+- **feat(mobile): WeekView touch targets maiores** — Day circles `w-10 h-10 text-base`, letras `text-xs`, indicador ativo `w-8 h-1`.
+
+#### Leads (v2.72.3–v2.72.4)
+- **feat(mobile): Botões avançar/voltar fase** — `ChevronRight` para avançar e `ChevronLeft` para voltar. Não aparece na primeira/última stage nem em Ganho/Perdido. Aplicado em kanban e list view.
+- **feat(mobile): Stage selector → dropdown simples** — Bottom sheet removido, substituído por dropdown `absolute` abaixo do botão. Click-outside via ref + event listener. Items `px-4 py-3 text-sm`.
+- **feat(mobile): Cards mais compactos** — Espaçamentos reduzidos: `mb-3→mb-1`, `mt-4 pt-4→mt-2 pt-2`. Kanban e list view.
+- **feat(mobile): Pipeline config drag-to-reorder** — `@dnd-kit/sortable` com `SortableStageItem` + `GripVertical` handle. TouchSensor (150ms delay).
+
+#### Financeiro (v2.72.4)
+- **feat(mobile): Modal de confirmação de exclusão** — `toast()` substituído por modal centralizado via `createPortal`. Ícone `Trash2` vermelho, backdrop blur, botões Cancelar/Excluir.
+
+#### Modais (v2.72.5)
+- **fix(mobile): Headers dos modais fixos** — `shrink-0` no header e footer dos modais LeadFormModal e Finance Transaction Modal. Container com `overflow-hidden flex flex-col`, content com `flex-1 overflow-y-auto`. Título não scrolla mais.
+
+### Arquivos Modificados
+- `apps/web/src/features/leads/LeadKanban.tsx` — Dropdown stages, advance/back buttons, cards compactos, pipeline drag
+- `apps/web/src/features/finance/Finance.tsx` — Delete confirmation modal, modal header fixo
+- `apps/web/src/features/calendar/components/CalendarView.tsx` — Rounded, buttons, novo evento, sticky header, touch targets
+- `apps/web/src/features/dashboard/Dashboard.tsx` — Revert sticky (não necessário)
+- `apps/web/src/features/clients/components/ClientsList.tsx` — Revert sticky (não necessário)
+
+---
+
+## [2.72.2] - 2026-03-27 - Mobile: Bottom Sheet Stages + Finance Layout Fix
+
+### feat(mobile): Seletor de stages do Kanban virou bottom sheet
+
+- **feat(mobile): Stage selector → bottom sheet** — Dropdown `absolute` substituído por bottom sheet `fixed` via `createPortal(jsx, document.body)`. `max-h-[70vh]` com scroll nativo (`-webkit-overflow-scrolling: touch`), header "Selecionar Etapa" com X, itens `px-5 py-4` com separadores, safe area iPhone. Resolve definitivamente o problema de scroll no seletor de stages.
+- **fix(mobile): Finance filtro expande, CSV/PDF mantêm tamanho** — Filtro produto usa `flex-1` (expande), botões CSV/PDF usam `shrink-0` (tamanho original). "Nova Transação" em linha própria abaixo (`w-full`).
+
+### Arquivos Modificados
+- `apps/web/src/features/leads/LeadKanban.tsx` — Stage dropdown → bottom sheet portal
+- `apps/web/src/features/finance/Finance.tsx` — flex-1 filtro, shrink-0 CSV/PDF
+
+---
+
+## [2.72.1] - 2026-03-27 - Mobile: Backdrop Close + Pipeline Scroll + Finance Grid + Módulos Cleanup
+
+### fix(mobile): Modais fecham ao clicar no backdrop + melhorias UX
+
+- **fix(mobile): Pipeline config — scroll único** — Removido `max-h-[350px] overflow-y-auto` interno da lista de stages. Agora só o container externo (`flex-1 overflow-y-auto`) controla o scroll.
+- **feat(mobile): Pipeline config — backdrop fecha modal** — `onClick={onClose}` no backdrop + `stopPropagation` no container interno.
+- **feat(mobile): LeadFormModal — backdrop fecha modal** — Mesmo padrão: click no backdrop fecha, click no modal não propaga.
+- **fix(mobile): Módulos "Voltar" removido** — Botão "Voltar para Dados Gerais" no ClientModulesTab removido (navegação já feita via tabs/dropdown). Import ArrowLeft e useEffect Escape também removidos.
+- **feat(mobile): Finance filtros grid 3 colunas** — Container `grid grid-cols-3`, "Nova Transação" `col-span-3` em linha própria.
+
+### Arquivos Modificados
+- `apps/web/src/features/leads/LeadKanban.tsx` — Pipeline scroll único, backdrop close em 2 modais
+- `apps/web/src/features/clients/components/ClientModulesTab.tsx` — Removido botão Voltar + useEffect + ArrowLeft
+- `apps/web/src/features/finance/Finance.tsx` — Grid 3 colunas filtros
+
+---
+
+## [2.72.0] - 2026-03-27 - Mobile: UX Fixes — Search, Cards, Pipeline, Finance
+
+### fix(mobile): 5 ajustes de UX mobile
+
+- **fix(mobile): Search placeholder cortado** — Placeholder "Pesquisar clínica ou responsável..." encurtado para "Pesquisar cliente..." no input de busca de clientes.
+- **fix(mobile): Kanban dropdown max-height** — `max-h-[calc(100vh-220px)]` alterado para `max-h-[60vh]` + `overscroll-contain` no seletor de stages.
+- **feat(mobile): Lead cards — fontes maiores** — Nome `text-sm` → `text-base`, clínica `text-[10px]` → `text-xs`, telefone `text-[11px]` → `text-sm`, responsável/dias `text-[9px]` → `text-xs`. Padding `p-5` → `p-4`, margin `mb-4` → `mb-2`. Aplicado em ambas as listas (kanban single-stage e list view).
+- **feat(mobile): Pipeline config slide-up** — Modal centralizado → slide-up bottom (`items-end md:items-center`), `rounded-t-2xl md:rounded-2xl`, `max-h-[75vh]`, `flex flex-col` com header/footer `shrink-0`.
+- **fix(mobile): Botão "Salvar Configurações" com mais espaço** — `py-3.5 md:py-3 px-4`. Footer empilha `flex-col-reverse md:flex-row`.
+
+### Arquivos Modificados
+- `apps/web/src/features/clients/components/ClientsList.tsx` — Search placeholder
+- `apps/web/src/features/leads/LeadKanban.tsx` — Dropdown max-h, card fonts, pipeline modal, save button
+
+---
+
+## [2.71.3] - 2026-03-26 - Mobile: ClientDetailModal Altura Fixa + Header Fix
+
+### fix(mobile): Modal de detalhes do cliente com altura consistente
+
+- **fix(mobile): Modal altura fixa 75vh** — Modal container mudou de `max-h-[calc(100%-1rem)]` para `h-[75vh] md:h-auto`. Agora TODAS as abas (Geral, Contrato, Financeiro, Tenant, Interações, Módulos) ocupam exatamente o mesmo espaço. Content area usa `flex-1 overflow-y-auto` dentro do container fixo.
+- **fix(mobile): Header não estoura** — Nome da empresa com `truncate` + `text-base md:text-xl` + `min-w-0`. Tenant ID escondido no mobile (`hidden md:inline`). Botões de ação com `shrink-0` + `gap-2`. Botão de deletar não sai mais da tela.
+
+### Arquivos Modificados
+- `apps/web/src/features/clients/components/ClientsList.tsx` — ClientDetailModal: h-[75vh], header truncate, content flex-1
+
+---
+
+## [2.71.2] - 2026-03-26 - Mobile: Finance Cards + Filtros | ClientDetail Dropdown Tabs
+
+### Mobile UX — Financeiro + Detalhes de Cliente
+
+#### Financeiro
+- **feat(mobile): "Limpar Filtros" na linha do título** — Movido para a mesma linha de "Últimas Transações", alinhado à direita. Mobile-only (`md:hidden`), desktop mantém inline com filtros.
+- **feat(mobile): Transaction cards redesenhados** — Layout de 3 linhas reduzido para 2: Row 1 = nome + ações (ícones 14px integrados à direita), Row 2 = status badge + valor. Sem mais ícones flutuantes soltos.
+
+#### Detalhes do Cliente (ClientDetailModal)
+- **fix(mobile): StatusBadge sem quebra de linha** — `whitespace-nowrap` adicionado. "Em Trial" não quebra mais em 2 linhas.
+- **fix(mobile): Botão Editar compacto** — `p-2 md:px-4 md:py-2` com `rounded-xl` no mobile (icon-only), desktop inalterado.
+- **feat(mobile): Tabs viram dropdown** — Tabs horizontais substituídas por dropdown custom (`md:hidden`) com ícone laranja + nome da aba + chevron. Desktop mantém tabs horizontais (`hidden md:flex`).
+- **fix(mobile): Content area altura fixa** — `h-[60vh] md:h-auto` para scroll consistente entre abas.
+
+### Arquivos Modificados
+- `apps/web/src/features/finance/Finance.tsx` — Limpar Filtros no título, cards 2-row
+- `apps/web/src/features/clients/components/ClientsList.tsx` — StatusBadge, dropdown tabs, edit button, content height
+
+---
+
+## [2.71.1] - 2026-03-26 - Mobile: Botão Novo Cliente + Finance Inline Button + Filtros 2x2
+
+### Mobile UX — Clientes + Financeiro
+
+#### Clientes
+- **fix(mobile): ClientDetailModal altura consistente** — `min-h-[60vh] md:min-h-0` na área de conteúdo das abas. Modal não muda de tamanho ao trocar entre abas.
+- **feat(mobile): Botão Novo Cliente = Novo Lead** — `py-3.5 rounded-xl text-base w-full` no mobile, idêntico ao padrão do Novo Lead. Desktop preservado com `md:py-2.5 md:rounded-lg md:text-sm md:w-auto`.
+
+#### Financeiro
+- **feat(mobile): FAB removido → botão inline** — FAB circular flutuante (+) removido. Botão "Nova Transação" agora visível em ambos com `<Plus />` ícone + texto, full-width no mobile.
+- **feat(mobile): Filtros 2 por linha** — 4 filtros de transações usam `grid grid-cols-2` no mobile. "Limpar Filtros" ocupa 2 colunas. Desktop mantém `flex-row` inline.
+
+### Arquivos Modificados
+- `apps/web/src/features/clients/components/ClientsList.tsx` — min-h content, botão Novo Cliente
+- `apps/web/src/features/finance/Finance.tsx` — FAB→inline, grid filtros
+
+---
+
+## [2.71.0] - 2026-03-26 - Security & Integration Audit — One Nexus (17 fixes)
+
+### Auditoria completa da integração One Nexus com equipe de 10 agentes especializados
+
+Auditoria de segurança, funcionalidade e arquitetura em todos os endpoints que se conectam com a API One Nexus. 4 agentes de scan (bug-hunter, security-scanner, module-scanner, frontend auditor) + 10 agentes cirúrgicos (fix-surgeon) + 2 meta-auditores independentes.
+
+#### CRÍTICOS — Segurança (4 fixes)
+
+- **fix(security): GESTOR podia impersonate qualquer cliente** — Adicionado `validateAccess()` no `startImpersonate()`. GESTOR agora só pode impersonate clientes da sua equipe (vendedor.gestorId === currentUserId). SUPERADMIN/DESENVOLVEDOR mantêm acesso total.
+- **fix(security): PII vazando nos logs de produção (LGPD)** — Removido `console.log(JSON.stringify(dto))` no endpoint `POST /clients` que expunha empresa, CPF/CNPJ, email e telefone nos logs do container Docker.
+- **fix(security): Body do impersonate sem validação** — Adicionado `ZodValidationPipe` no endpoint `POST /clients/:id/impersonate`. Campo `reason` agora é obrigatório, mínimo 3 caracteres, máximo 500.
+- **fix(security): endImpersonate ignorava falha do One Nexus** — Retorno de `oneNexusService.endImpersonate()` agora é capturado. Se `false`, gera `logger.warn()` com sessionId. Sessão local continua marcada como encerrada (graceful degradation).
+
+#### ALTOS — Funcionalidade (4 fixes)
+
+- **fix(api): Rotas /tenants nunca alcançadas** — `@Get(':id')` capturava "client", "uuid", "modules" como parâmetro. Reordenado: rotas estáticas (`modules/available`, `client/:clientId`, `uuid/:tenantUuid`) agora vêm ANTES do catch-all `:id`.
+- **fix(api): suspend/activate/block/delete não sincronizavam com One Nexus** — Tenant podia estar BLOQUEADO localmente mas ATIVO no One Nexus. Adicionado sync com graceful degradation (`.catch()` inline) nos 4 métodos. Mapeamento: suspend→suspended, activate→active, block→suspended, delete→canceled.
+- **fix(web): cancel/reactivate retornava 404** — Frontend usava `method: 'PATCH'` mas backend declara `@Post()`. Corrigido para `method: 'POST'`.
+- **fix(web): cancel/reactivate sem feedback visual** — Substituído `console.error` por `toast.error` (Sonner). Adicionado `toast.success` no sucesso.
+
+#### MÉDIOS — Operacional (6 fixes)
+
+- **fix(api): Sem aviso no startup quando ONE_NEXUS_API_KEY ausente** — Implementado `OnModuleInit` no `OneNexusService`. Loga `⚠️ integração desabilitada` ou `✅ configurada → URL` na inicialização.
+- **fix(config): ONE_NEXUS vars ausentes do .env.example** — Adicionada seção `ONE NEXUS (INTEGRAÇÃO)` com `ONE_NEXUS_API_URL` e `ONE_NEXUS_API_KEY`.
+- **fix(api): updateModules V1 conflita com toggleModules V3** — Marcado `updateModules()` como `@deprecated` com direcionamento para `toggleModules()` (V3 com cascata automática).
+- **fix(api): HttpModule sem maxRedirects** — Adicionado `maxRedirects: 3` na configuração do `HttpModule.register()`.
+- **fix(web): isDark hardcoded no ClientModulesTab** — `isDark={true}` substituído por detecção real via `useUIStore()`. Árvore de módulos agora respeita tema light/dark do usuário.
+- **fix(arch): OneNexusModule ausente do IntegrationsModule** — Adicionado import e export no módulo pai de integrações. Corrige gap arquitetural (era importado diretamente por cada consumidor).
+
+#### BAIXOS — Cleanup (3 fixes)
+
+- **fix(api): getStats() dead code removido** — Método nunca chamado por nenhum service ou controller. Removido do `OneNexusService`.
+- **fix(web): Hooks V1 legados removidos** — `useAvailableModules`, `useUpdateModules` e interface `OneNexusModule` (V1) não eram importados por nenhum componente. Removidos. Hooks V3 preservados.
+- **fix(web): useEndImpersonate sem toast** — Adicionado `toast.success` no sucesso e `toast.error` na falha.
+
+### Arquivos Modificados (Backend)
+- `apps/api/src/modules/clients/clients.service.ts` — validateAccess no impersonate, endImpersonate resilience
+- `apps/api/src/modules/clients/clients.controller.ts` — Removido console.log PII, Zod no impersonate body
+- `apps/api/src/modules/tenants/tenants.controller.ts` — Rotas GET reordenadas
+- `apps/api/src/modules/tenants/tenants.service.ts` — Sync One Nexus em suspend/activate/block/delete
+- `apps/api/src/modules/integrations/one-nexus/one-nexus.service.ts` — OnModuleInit, @deprecated, getStats removido
+- `apps/api/src/modules/integrations/one-nexus/one-nexus.module.ts` — maxRedirects
+- `apps/api/src/modules/integrations/integrations.module.ts` — OneNexusModule import/export
+- `apps/api/.env.example` — ONE_NEXUS vars
+
+### Arquivos Modificados (Frontend)
+- `apps/web/src/features/clients/ClientDetails.tsx` — POST method, toast feedback
+- `apps/web/src/features/clients/components/ClientModulesTab.tsx` — isDark dinâmico
+- `apps/web/src/features/clients/hooks/useClientModules.ts` — Dead code V1, toast endImpersonate
+
+---
+
+## [2.70.2] - 2026-03-26 - Hotfix: React Portal em Todos os Modais
+
+### fix(mobile): Backdrop de modais não cobria o header — solução definitiva com React Portal
+
+Após o deploy da v2.70.1 (remoção do `z-0` do Header), o backdrop dos modais AINDA não cobria o header em certas combinações de stacking context. A abordagem anterior (apenas z-index) não resolvia porque o modal `fixed inset-0` renderizado dentro do `AppLayout` competia com o `<header>` no mesmo contexto de empilhamento.
+
+**Solução definitiva — 3 frentes simultâneas:**
+
+#### 1. React Portal (`createPortal`) em todos os modais
+Todos os modais inline agora renderizam via `createPortal(jsx, document.body)`, completamente fora do AppLayout. Isso elimina qualquer competição de stacking context.
+
+- **`Modal.tsx`** (genérico) — Portal no return
+- **`ClientFormModal`** (ClientsList.tsx) — Portal wrapping o form
+- **`ImpersonateModal`** (ClientsList.tsx) — Portal wrapping o modal
+- **`ClientDetailModal`** (ClientsList.tsx) — Portal wrapping o detail
+- **`LeadFormModal`** (LeadKanban.tsx) — Portal wrapping o form
+- **`PipelineConfigModal`** (LeadKanban.tsx) — Portal wrapping o config
+
+#### 2. Header: `relative` apenas no desktop
+Header mudou de `relative z-20` para `md:relative md:z-20`. No mobile, sem `relative` = modais portalizados não são confinados ao coordinate system do header.
+
+#### 3. ClientFormModal: cadeia de heights corrigida
+Form content com `flex-1 overflow-y-auto` funcional. Header e footer com `shrink-0` impedem compressão.
+
+### Arquivos Modificados
+- `apps/web/src/components/ui/Modal.tsx` — `createPortal(jsx, document.body)`
+- `apps/web/src/features/clients/components/ClientsList.tsx` — Portal em ClientFormModal, ImpersonateModal, ClientDetailModal
+- `apps/web/src/features/leads/LeadKanban.tsx` — Portal em LeadFormModal, PipelineConfigModal
+- `apps/web/src/components/layout/Header.tsx` — `md:relative md:z-20` (sem relative no mobile)
+
+---
+
+## [2.70.1] - 2026-03-26 - Mobile Fixes — UX Polish
+
+### Mobile Fixes — 5 ajustes de UX mobile
+
+#### Leads
+- **feat(mobile): Pipeline dropdown maior** — Touch targets aumentados: botão e opções com `py-3.5 text-base md:text-sm`, dots `w-2.5 h-2.5`, chevron `size={18}`. Melhor usabilidade em telas touch.
+
+#### Clientes
+- **feat(mobile): FAB substituído por botão inline** — Removido FAB flutuante (+). Botão "Novo Cliente" agora é inline na página, full-width no mobile (`w-full md:w-auto`), mantendo layout desktop inalterado.
+- **fix(mobile): Borda branca no search** — Adicionado `outline-none` ao input de busca. Browser default outline criava borda branca sob o ring laranja no focus.
+- **fix(mobile): ClientFormModal sem scroll** — Adicionado `shrink-0` ao header e footer do modal, `overscroll-contain` na área de conteúdo. Flexbox agora dá espaço correto ao `flex-1 overflow-y-auto`.
+
+#### Infraestrutura
+- **fix(mobile): Backdrop cobre header** — Removido `z-0` do Header no mobile (era `z-0 md:z-20`, agora `md:z-20`). O `z-0` criava stacking context que competia com modais `z-50`/`z-[200]`, impedindo o backdrop de cobrir o header.
+- **feat(discord): Mensagens embed card** — Script `notify-discord.sh` agora suporta `--embed` para enviar cards Discord com título, descrição, campos e cores.
+
+### Arquivos Modificados
+- `apps/web/src/features/leads/LeadKanban.tsx` — Pipeline dropdown touch targets
+- `apps/web/src/features/clients/components/ClientsList.tsx` — FAB→inline, search outline, modal scroll
+- `apps/web/src/components/layout/Header.tsx` — Removido z-0 mobile
+- `scripts/notify-discord.sh` — Suporte a embed cards
+- `CLAUDE.md` — Documentação atualizada
+
+---
+
+## [2.70.0] - 2026-03-24 - Mobile Layout Completo — Todos os Módulos
+
+### Mobile Layout — Adaptação completa de todos os módulos para mobile
+
+#### Dashboard
+- **feat(mobile): Dropdown atividades sem título duplicado** — `ExpandableActivityCard` ganhou prop `hideHeader` que esconde o header no mobile (dropdown já mostra o nome).
+- **feat(mobile): Header com logo completa** — Trocado ícone por logo com nome (`logo-dark.png`/`logo-light.png`).
+
+#### Leads
+- **feat(mobile): Botão "Novo Lead" full-width** — Barra de ações mobile mudou para layout vertical: botão Novo Lead ocupa toda a largura, toggle+config na segunda linha.
+- **feat(mobile): Modal de lead slide-up** — Modal sobe do bottom com backdrop blur, `rounded-t-2xl`, `max-h-[calc(100%-1rem)]`.
+- **feat(mobile): Cores por stage no dropdown** — Paleta de 8 cores distintas (blue, amber, violet, emerald, pink, orange, teal, rose) + verde/vermelho para Ganho/Perdido. Bolinha colorida no botão e nos itens do menu.
+
+#### Clientes
+- **feat(mobile): ClientDetails responsivo** — Header empilha, título `text-xl md:text-3xl`, tabs com scroll horizontal, pagamentos em card view mobile.
+- **feat(mobile): ClientFormModal com scroll** — Form agora scrolla entre header e footer fixos. Modal slide-up com backdrop blur.
+- **feat(mobile): Inputs anti-zoom iOS** — Todos os inputs do form com `py-3 md:py-2 text-base md:text-sm`.
+- **feat(mobile): Footers empilhados** — Botões `flex-col-reverse md:flex-row` em todos os modais (Form, Impersonate, Reactivate).
+- **feat(mobile): Impersonate logs card view** — Tabela de logs convertida para cards no mobile.
+- **feat(mobile): Presets grid responsivo** — `grid-cols-2 md:grid-cols-3` com `active:scale-95`.
+
+#### Financeiro
+- **feat(mobile): Touch targets corrigidos** — Botões de ação nos cards `p-2.5` (era `p-1.5`), filtros `py-3 md:py-2`, inputs do modal `py-3 md:py-2 text-base md:text-sm`.
+- **feat(mobile): Footer do modal empilhado** — `flex-col-reverse md:flex-row`.
+- **feat(mobile): ARR card col-span-2** — Último card de métricas ocupa largura total no mobile.
+- **feat(mobile): Botões CSV/PDF diferenciados** — CSV com ícone `Download` + label "CSV", PDF com ícone `FileText` + label "PDF" — sempre visíveis.
+- **feat(mobile): ClientFinanceModal slide-up** — Fullscreen com card view para transações, padding responsivo.
+- **feat(mobile): Alert cards scroll maior** — `max-h-96 md:max-h-64` para menos scroll aninhado.
+
+#### Calendário (5 Fases)
+- **feat(mobile): Header touch targets** — View selector `py-2.5 md:py-1.5 text-xs md:text-[10px]`, nav `p-2.5 md:p-2`, data curta no mobile.
+- **feat(mobile): MonthView compacto** — Calendário com células pequenas (número + bolinhas coloridas por tipo), toque seleciona dia, lista de eventos abaixo com cards.
+- **feat(mobile): WeekView com tabs de dias** — 7 tabs horizontais com número + contagem, lista de eventos do dia selecionado abaixo.
+- **feat(mobile): DayView otimizado** — Coluna de hora `w-14 md:w-24`, header `text-xl md:text-3xl`, touch feedback nos cards.
+- **feat(mobile): YearView grid responsivo** — `grid-cols-2 md:grid-cols-3 lg:grid-cols-4`, nomes abreviados no mobile.
+- **feat(mobile): Sidebar como bottom sheet** — Botão filtros no header abre sheet com busca, filtros de tipo e próximos eventos.
+- **feat(mobile): Modais fullscreen** — CalendarEventForm e CalendarEventDetail com grids `grid-cols-1 md:grid-cols-2`, footers empilhados.
+
+#### Sales AI
+- **feat(mobile): Container não sobrepõe BottomNav** — `bottom-[calc(5rem+env(safe-area-inset-bottom))] md:bottom-0`.
+- **feat(mobile): Padding responsivo em todas as views** — `p-4 md:p-10` em Briefing, Insights, Battlecard, Roleplay, Generator.
+- **feat(mobile): Ícones responsivos** — Sparkles, Brain, Users, Target com tamanhos menores no mobile.
+- **feat(mobile): Circle progress responsivo** — `w-24 h-24 md:w-32 md:h-32` no InsightsView.
+- **feat(mobile): Chat input** — Padding `px-3 md:px-6`, placeholder curto.
+- **feat(mobile): LeadSelector responsivo** — `min-w-0 md:min-w-[200px]`, dropdown `w-[calc(100vw-2rem)] md:w-80`.
+
+#### Formulários
+- **feat(mobile): FormSubmissions card view** — Tabela convertida para cards no mobile com data + campos + status.
+- **feat(mobile): FormBuilder responsivo** — Header `px-3 md:px-6`, cards `p-4 md:p-6`, preview `grid-cols-1 md:grid-cols-2`.
+- **feat(mobile): Modal campo customizado slide-up** — Bottom sheet com handle bar, `grid-cols-2 md:grid-cols-3`.
+- **feat(mobile): PublicForm responsivo** — Grid `grid-cols-1 md:grid-cols-2`, inputs `text-base md:text-sm`, padding `p-4 md:p-8`.
+
+#### Notificações
+- **fix(mobile): Ações visíveis no mobile** — Botões mark-as-read e delete com `opacity-100 md:opacity-0 md:group-hover:opacity-100` (antes invisíveis no touch).
+- **feat(mobile): Touch targets corrigidos** — Filtros, pills, pagination, toggles App/Push/Email, botões do panel todos com padding responsivo.
+- **feat(mobile): Inputs anti-zoom** — Search e broadcast inputs com `text-base md:text-xs`.
+- **feat(mobile): Panel header buttons** — `p-2 md:p-1.5` com `active:scale-95`.
+
+#### Infraestrutura Mobile
+- **feat(mobile): Modal genérico slide-up** — `Modal.tsx` refatorado: `items-end md:items-center`, `rounded-t-2xl md:rounded-lg`, `max-h-[calc(100%-1rem)]`, backdrop `backdrop-blur-sm`.
+- **feat(mobile): ModalFooter empilhado** — `flex-col-reverse md:flex-row` automático.
+- **feat(mobile): Header h-16** — Aumentado de h-14 para h-16, logo h-8, z-0 no mobile para não competir com modais.
+- **feat(mobile): AppLayout sem overflow-hidden no main** — Permite `fixed` elements escaparem corretamente.
+- **feat(mobile): Discord deploy notifications** — Script `scripts/notify-discord.sh` com 3 etapas: build iniciando, build finalizado, deploy finalizado.
+
+### Regras de Implementação
+- Desktop (>= 768px): ZERO mudanças visuais ou funcionais
+- Nenhuma rota de API ou lógica de negócio modificada
+- Todas as mudanças via Tailwind responsive classes (`md:` breakpoint)
+
+---
+
+## [2.69.5] - 2026-03-24 - Métricas IA Dinâmicas no Vendas IA
+
+### fix(sales-ai): Métricas IA do Lead e aba Insights eram 100% estáticas
+- **fix(sales-ai): MetricsSidebar conectado a dados reais** — Os 3 cards de métricas exibiam valores hardcoded ("R$ 4.800", "8.4/10", fallback 88%). Agora mostram: Temperatura do Lead (QUENTE/MORNO/FRIO derivado do score), Plano de interesse (nome real), e Lead Score IA na escala 0-10 (`score/10`). Ação sugerida agora muda conforme o estágio do lead (6 ações). Histórico de sugestões substituído por placeholder honesto.
+- **fix(sales-ai): Score exibido como 0-10 em vez de porcentagem** — O Lead Intelligence Score na aba Insights mostrava `40%` (escala 0-100 como porcentagem). Agora exibe `4.0 / 10` na escala correta solicitada, mantendo o gauge circular proporcional.
+- **fix(sales-ai): Urgência, Fit ICP e Temperatura derivados do score** — Antes eram strings fixas ("ALTA", "EXCELENTE", "NEUTRO-POSITIVO"). Agora são calculados dinamicamente: Urgência pelo score, Fit ICP pelos fatores do score (planValue + originQuality), Temperatura pela classificação QUENTE/MORNO/FRIO.
+- **fix(sales-ai): DISC com análise real via IA** — O perfil DISC mostrava "INFLUENTE" fixo. Agora exibe botão "Gerar Análise DISC" que chama `POST /sales-ai/insights` e popula: perfil, abordagem, tom recomendado, gatilhos emocionais e dores prováveis com dados gerados por IA.
+- **fix(sales-ai): ROI Estimado substituído por Progresso no Funil** — O card "ROI Estimado 24%" (fictício) foi substituído por "Progresso no Funil" que mostra a porcentagem real de avanço do lead no pipeline, derivada de `aiScoreFactors.stageProgress`.
+- **fix(sales-ai): Removida redundância Probabilidade vs Lead Score** — Ambos os cards usavam o mesmo `leadScore` em formatos diferentes. "Probabilidade" foi substituído por "Temperatura do Lead" (QUENTE/MORNO/FRIO) para dar informação única de relance.
+
+### Arquivos Modificados
+- `apps/web/src/hooks/useSalesAI.ts` — `aiScoreFactors` adicionado à interface `LeadContext`
+- `apps/web/src/pages/SalesAI/SalesAI.tsx` — `mapLeadToContext` enriquecido com `aiScoreFactors`
+- `apps/web/src/pages/SalesAI/components/MetricsSidebar.tsx` — 3 cards dinâmicos, ação por estágio, temperatura do lead
+- `apps/web/src/pages/SalesAI/views/InsightsView.tsx` — Score 0-10, métricas derivadas, DISC via IA, progresso no funil
+
+---
+
+## [2.69.4] - 2026-03-24 - Header Dropdowns Sobre Vendas IA
+
+### fix(sales-ai): Dropdowns do header apareciam atrás da página Vendas IA
+- **fix(sales-ai): Isolamento de stacking context com `z-0`** — O container raiz do SalesAI usava `absolute inset-0` sem z-index, fazendo seu conteúdo (z-20) competir com o Header (z-20 + `backdrop-blur`). Adicionado `z-0` ao container para criar stacking context isolado, garantindo que o Header e seus dropdowns (menu do usuário, notificações) fiquem sempre por cima.
+- **fix(sales-ai): Settings modal movido para fora do stacking context** — O modal de configurações (`fixed z-40/z-50`) foi movido para fora do container `z-0`, evitando que ficasse preso no stacking context e aparecesse atrás do Header.
+
+### Arquivos Modificados
+- `apps/web/src/pages/SalesAI/SalesAI.tsx` — `z-0` no container raiz + settings modal como sibling externo
+
+---
+
+## [2.69.3] - 2026-03-24 - CNPJ Formatado ao Abrir Lead
+
+### fix(leads): CNPJ exibido com máscara ao abrir modal de edição
+- **fix(leads): Formatar CNPJ no carregamento do lead** — O campo CNPJ agora é formatado (`xx.xxx.xxx/xxxx-xx`) ao abrir o modal de um lead existente, seguindo o mesmo padrão já aplicado ao telefone (`formatPhoneForDisplay`). Antes, o valor aparecia cru (só números) e só formatava ao digitar.
+
+### Arquivos Modificados
+- `apps/web/src/features/leads/LeadKanban.tsx` — `formatCnpj()` aplicado no `useEffect` de sincronização do formData
+
+---
+
+## [2.69.2] - 2026-03-24 - Notification Bell Toggle Fix
+
+### fix(notifications): Sino funciona como toggle (abre/fecha)
+- **fix(header): Overlay desktop no painel de notificações** — Adicionado overlay transparente atrás do painel (mesmo padrão do menu do avatar), evitando conflito entre `mousedown` e `click` que causava o painel "piscar" ao clicar no sino com ele aberto.
+- **fix(notifications): Removido click-outside handler redundante** — O `useEffect` com `document.addEventListener('mousedown')` no NotificationPanel foi removido. O Header agora controla o fechamento via overlay tanto no desktop quanto no mobile.
+
+### Arquivos Modificados
+- `apps/web/src/components/layout/Header.tsx` — Overlay `fixed inset-0 z-30` no desktop notifications
+- `apps/web/src/features/notifications/components/NotificationPanel.tsx` — Removido useEffect click-outside
+
+---
+
+## [2.69.1] - 2026-03-24 - Global Search: Navegação com Filtro
+
+### Busca Global — Navegação inteligente com filtro automático
+- **fix(search): Padronizar navegação de Clientes** — Clique em resultado de cliente agora navega para `/clients` (lista) ao invés de `/clients/:id` (detalhe individual). Consistente com Leads e Eventos.
+- **feat(search): Filtro automático ao clicar no resultado** — Ao clicar em um resultado do dropdown, o módulo destino abre com a barra de pesquisa local já preenchida e filtrada. Navegação via `?search=nome` na URL.
+- **feat(clients): Barra de pesquisa funcional** — Input de pesquisa da ClientsList estava apenas visual (sem filtro). Agora filtra por clínica, responsável, CPF/CNPJ e tenant ID.
+- **fix(search): Limpeza automática da URL** — O parâmetro `?search=` é removido da URL após preencher o campo de busca local (não polui histórico de navegação).
+
+### Arquivos Modificados
+- `apps/api/src/modules/search/search.service.ts` — URL do cliente: `/clients/:id` → `/clients`
+- `apps/web/src/components/layout/SearchDropdown.tsx` — Navegação com `?search=` via `encodeURIComponent`
+- `apps/web/src/features/leads/LeadKanban.tsx` — `useSearchParams` lê `?search=` e preenche filtro
+- `apps/web/src/features/clients/components/ClientsList.tsx` — `useSearchParams` + filtro real conectado ao input
+- `apps/web/src/features/calendar/components/CalendarView.tsx` — `useSearchParams` lê `?search=` e filtra eventos
+
+---
+
+## [2.69.0] - 2026-03-24 - Global Search + Notification Panel Fixes
+
+### Global Search (Header)
+- **feat(search): Busca global funcional** — Barra de pesquisa do Header agora busca em Leads, Clientes e Eventos do Calendário em tempo real com dropdown de resultados agrupados por categoria.
+- **feat(search): Backend `GET /api/v1/search?q=`** — Novo módulo read-only isolado. 3 queries Prisma em paralelo (`Promise.all`), limite de 5 resultados por categoria, scoping completo por role (VENDEDOR/GESTOR/SUPERADMIN).
+- **feat(search): Filtros inteligentes** — Leads filtra apenas `status: ABERTO` (ignora GANHO/PERDIDO). Clientes exclui `CANCELADO`. Eventos filtra `deletedAt: null`.
+- **feat(search): UX** — Debounce 300ms, mínimo 2 caracteres, Escape fecha, click-outside fecha, ícones por categoria (Users/UserCheck/CalendarDays), dark/light mode, staleTime 30s.
+- **feat(search): Navegação** — Click em Lead → `/leads`, Client → `/clients/:id`, Evento → `/calendar`.
+
+### Notification Panel (Header)
+- **fix(notifications): Panel fechando ao clicar dentro** — Corrigido bug de dual-instance React (CSS `hidden md:block` monta 2 instâncias). Instância invisível disparava click-outside handler. Fix via `offsetParent` null check.
+- **fix(notifications): Click em notificação agora navega para `/notifications`** — Antes apenas fechava o panel.
+- **fix(notifications): "Limpar tudo" substituído por "Marcar todas como lidas"** — Antes fazia hard delete permanente. Agora usa `markAllAsRead`. Botão X individual também marca como lida ao invés de deletar.
+
+### Arquivos Criados
+- `apps/api/src/modules/search/search.module.ts` — Módulo isolado
+- `apps/api/src/modules/search/search.controller.ts` — Endpoint GET /search
+- `apps/api/src/modules/search/search.service.ts` — Queries Prisma read-only
+- `apps/web/src/hooks/useGlobalSearch.ts` — TanStack Query + debounce
+- `apps/web/src/components/layout/SearchDropdown.tsx` — Dropdown de resultados
+
+### Arquivos Modificados
+- `apps/api/src/app.module.ts` — +SearchModule
+- `apps/web/src/components/layout/Header.tsx` — Search dropdown + imports
+- `apps/web/src/features/notifications/components/NotificationPanel.tsx` — offsetParent fix, mark-as-read, navegação
+
+### Segurança
+- Zero migrations (busca em tabelas existentes)
+- Guards globais (JwtAuthGuard + RolesGuard) protegem /search
+- Prisma ORM previne SQL injection (prepared statements)
+- Módulo One Nexus não foi tocado
+
+---
+
+## [2.68.0] - 2026-03-19 - Mobile UX Polish + Push Notifications Mobile
+
+### Mobile UX — Polimento completo da interface mobile
+
+- **feat(mobile): Push notifications mobile ativado** — `MOBILE_PUSH_ENABLED = true`, notificacoes push nativas agora funcionam em dispositivos moveis (Web Push API / VAPID).
+- **feat(mobile): Header atualizado** — Theme toggle (Sol/Lua) visivel no mobile, avatar com iniciais do usuario navega para `/account`, layout compacto com gap otimizado.
+- **feat(mobile): BottomNav simplificado** — Removido toggle de tema do menu "Mais" (movido para Header).
+- **feat(mobile): Custom dropdowns** — Todos os `<select>` nativos substituidos por dropdowns customizados com icone + chevron animado + menu com shadow. Aplicado em: Dashboard (atividades, produto), Leads (stages), Sales AI (tabs), Settings (tabs), Finance (produto).
+- **feat(mobile): CSS global selects** — `appearance: none`, seta SVG customizada, focus ring laranja (`#FF7300`), `-webkit-tap-highlight-color: transparent` para todos os selects do app.
+- **feat(mobile): Titulos com icone** — Todos os modulos principais agora tem icone laranja + titulo + descricao: Dashboard (`LayoutDashboard`), Leads (`TrendingUp`), Clientes (`Users`), Financeiro (`BarChart3`), Configuracoes (`Settings`).
+- **feat(mobile): NotificationPanel fullscreen** — Panel de notificacoes renderizado fora do header (escapa stacking context), abre fullscreen com backdrop escuro no mobile.
+- **feat(mobile): Dashboard otimizado** — MetricCards com trend badge visivel, subValue sempre visivel (`line-clamp-1`), feedback tactil (`active:scale`). Insights colapsavel com chevron. Graficos menores (Pie h-48, MRR h-44). Activity cards com padding reduzido. Product filter full-width no mobile.
+- **feat(mobile): Leads otimizado** — Barra de acoes mobile (Novo Lead + View toggle + Config). Vista de lista convertida para card view no mobile. Form inputs `py-3 text-base` (44px touch target). Modal footer empilha verticalmente. Stage dropdown com max-height dinamico. Scroll corrigido (sem `h-full` no mobile).
+- **feat(mobile): Safe area FABs** — Todos os FABs usam `bottom-[calc(5rem+env(safe-area-inset-bottom))]` (Clients, Finance, Forms).
+- **feat(mobile): AppLayout safe area** — Bottom padding com `calc(5rem+env(safe-area-inset-bottom))` para iPhone home indicator.
+- **feat(mobile): Smooth scroll iOS** — `-webkit-overflow-scrolling: touch` + `scroll-behavior: smooth`.
+
+### Regras de Implementacao
+- Desktop (>= 768px): ZERO mudancas visuais ou funcionais
+- Nenhuma rota de API ou logica de negocio modificada
+- Todas as mudancas via Tailwind responsive classes (`md:` breakpoint)
+
+### Arquivos Modificados
+- `apps/web/src/components/layout/Header.tsx` — Theme toggle mobile, avatar, notificacoes fora do header
+- `apps/web/src/components/layout/BottomNav.tsx` — Removido theme toggle
+- `apps/web/src/components/layout/AppLayout.tsx` — Safe area bottom padding
+- `apps/web/src/styles/index.css` — CSS global selects, smooth scroll
+- `apps/web/src/features/dashboard/Dashboard.tsx` — Titulo com icone, insights colapsavel, custom dropdowns, cards clicaveis
+- `apps/web/src/features/dashboard/components/ExpandableActivityCard.tsx` — Padding mobile otimizado
+- `apps/web/src/features/leads/LeadKanban.tsx` — Barra acoes, list view card, form inputs, footer, scroll fix
+- `apps/web/src/features/clients/components/ClientsList.tsx` — Titulo com icone, FAB safe area
+- `apps/web/src/features/finance/Finance.tsx` — Titulo com icone, custom dropdown produto, FAB safe area
+- `apps/web/src/features/settings/Settings.tsx` — Titulo com icone, custom dropdown tabs
+- `apps/web/src/pages/SalesAI/SalesAI.tsx` — Custom dropdown tabs
+- `apps/web/src/features/notifications/components/NotificationPanel.tsx` — Mobile fullscreen
+- `apps/web/src/features/forms/FormsPage.tsx` — FAB safe area
+- `apps/web/src/services/push-notification.service.ts` — `MOBILE_PUSH_ENABLED = true`
+
+> Para documentacao completa, consulte [CHANGELOG-MOBILE.md](./CHANGELOG-MOBILE.md)
+
+---
+
+## [2.67.0] - 2026-03-19 - Layout Mobile (WhatsApp-style)
+
+### Mobile Layout — Interface mobile completa para todas as paginas
+
+- **feat(mobile): Bottom Navigation** — Barra de navegacao inferior estilo WhatsApp com 5 icones (Home, Leads, Clientes, Financeiro, Mais). Botao "Mais" abre bottom sheet com menu completo + dark mode + logout.
+- **feat(mobile): Header compacto** — Header reduzido (h-14) com logo + notificacoes no mobile. Search, theme toggle e user menu so no desktop.
+- **feat(mobile): Sidebar escondida** — Sidebar desktop `hidden md:flex`, substituida pelo BottomNav no mobile.
+- **feat(mobile): Dashboard responsivo** — Metricas em 2 colunas, charts com altura reduzida, atividades via dropdown selector.
+- **feat(mobile): Clientes card view** — Tabela de clientes vira lista de cards no mobile. Modal de detalhes/criacao fullscreen.
+- **feat(mobile): Leads dropdown stages** — Kanban vira dropdown de stages + lista de cards. FAB para novo lead.
+- **feat(mobile): Financeiro card view** — Metricas compactas, tabela de transacoes vira cards, FAB para nova transacao.
+- **feat(mobile): Calendario compacto** — Header empilhado, sidebar escondida, "Novo Evento" so icone.
+- **feat(mobile): Vendas IA dropdown tabs** — 6 tabs viram dropdown selector no mobile. Settings modal fullscreen.
+- **feat(mobile): Chat altura ajustada** — Iframe com altura calculada para header + bottom nav.
+- **feat(mobile): Settings/Forms/Account** — Tabs viram dropdown, tabelas viram cards, modais fullscreen, padding responsivo.
+- **feat(mobile): Safe areas** — `viewport-fit=cover` + `env(safe-area-inset-bottom)` para iPhone notch.
+- **feat(mobile): useIsMobile hook** — Deteccao de viewport via `matchMedia` (< 768px).
+- **feat(mobile): Animacao slide-up** — Bottom sheet com animacao de entrada suave.
+
+### Regras de Implementacao
+- Desktop (>= 768px): ZERO mudancas visuais ou funcionais
+- Nenhuma rota de API, logica de negocio, hook, servico ou tipo modificado
+- Todas as mudancas via Tailwind responsive classes (`md:` breakpoint)
+
+### Arquivos Criados
+- `apps/web/src/hooks/useIsMobile.ts`
+- `apps/web/src/components/layout/BottomNav.tsx`
+- `CHANGELOG-MOBILE.md` (documentacao detalhada)
+
+### Arquivos Modificados (Layout Only)
+- `apps/web/src/components/layout/AppLayout.tsx`
+- `apps/web/src/components/layout/Sidebar.tsx`
+- `apps/web/src/components/layout/Header.tsx`
+- `apps/web/src/components/layout/index.ts`
+- `apps/web/src/styles/index.css`
+- `apps/web/index.html`
+- `apps/web/src/features/dashboard/Dashboard.tsx`
+- `apps/web/src/pages/Notifications/NotificationsPage.tsx`
+- `apps/web/src/features/clients/components/ClientsList.tsx`
+- `apps/web/src/features/leads/LeadKanban.tsx`
+- `apps/web/src/features/finance/Finance.tsx`
+- `apps/web/src/features/calendar/components/CalendarView.tsx`
+- `apps/web/src/pages/SalesAI/SalesAI.tsx`
+- `apps/web/src/features/chat/ChatPage.tsx`
+- `apps/web/src/features/settings/Settings.tsx`
+- `apps/web/src/features/forms/FormsPage.tsx`
+- `apps/web/src/pages/Account/AccountPage.tsx`
+
+> Para documentacao completa com detalhes de cada mudanca, consulte [CHANGELOG-MOBILE.md](./CHANGELOG-MOBILE.md)
+
+---
+
+## [2.66.0] - 2026-03-17 - Push Notifications (Web Push API / VAPID)
+
+### Push Notifications — Notificações nativas do navegador
+
+- **feat(push): Web Push API com VAPID keys** — Backend envia notificações push nativas via `web-push` library. Service Worker (`sw.js`) recebe e exibe notificações do SO mesmo com o Gestor minimizado ou em outra aba.
+- **feat(push): controle modular por tipo** — Cada tipo de notificação (Financeiro, Leads, IA, Sistema) tem toggle independente "Push" nas preferências, ao lado de "App" e "Email". Desativar Push para um tipo específico impede o envio push apenas desse tipo.
+- **feat(push): botão silenciar no painel** — Ícone sino/sino-off no header do NotificationPanel. Silenciar suprime todas as notificações push nativas sem afetar notificações in-app.
+- **feat(push): banner de ativação** — Ao abrir o painel de notificações pela primeira vez, banner convida o usuário a ativar push. Dispensável com "Agora não" (salvo em localStorage).
+- **feat(push): PWA manifest** — `manifest.json` com tema Nexus (laranja/zinc), ícones, standalone display. Meta tags `theme-color` e `apple-touch-icon` no `index.html`.
+- **feat(push): cleanup automático de subscriptions expiradas** — Endpoints que retornam 404/410 (subscription revogada pelo browser) são removidos automaticamente do banco.
+- **feat(push): suporte mobile preparado (desativado)** — Detecção de dispositivo (web/android/ios) implementada com flag `MOBILE_PUSH_ENABLED = false` até layout mobile estar pronto.
+
+### Backend
+
+- **Model `PushSubscription`** — `endpoint` (unique), `p256dh`, `auth`, `deviceType`, `userAgent`, FK cascade para User
+- **Campo `push` em `NotificationPreference`** — `Boolean @default(true)`, canal push por tipo
+- **`PushService`** — subscribe/unsubscribe, sendPush (com check de preferência + cleanup), sendTestPush
+- **4 novos endpoints**: `GET /notifications/vapid-key` (@Public), `POST /push/subscribe`, `DELETE /push/unsubscribe`, `POST /push/test`
+- **Integração no `create()`** — Push fire-and-forget após SSE/email/Slack, respeitando preferência `push`
+
+### Frontend
+
+- **Service Worker** (`public/sw.js`) — Handlers push, notificationclick, mute via postMessage
+- **`PushNotificationService`** — Singleton: init (SW registration, apenas PROD), subscribe/unsubscribe, mute toggle, visibility sync
+- **`usePushNotifications` hook** — isSupported, isSubscribed, isMuted, permission, subscribe, unsubscribe, toggleMute
+- **NotificationPanel** — Botão silenciar (BellOff) + banner de ativação push
+- **PreferencesPanel** — Toggle "Push" verde por tipo (Smartphone icon)
+- **App.tsx** — Init push no login, cleanup no logout
+
+### Arquivos Criados
+
+- `apps/api/src/modules/notifications/push.service.ts`
+- `apps/api/prisma/migrations/20260317120000_add_push_notifications/`
+- `apps/web/public/sw.js`
+- `apps/web/public/manifest.json`
+- `apps/web/src/services/push-notification.service.ts`
+- `apps/web/src/features/notifications/hooks/usePushNotifications.ts`
+
+### Arquivos Modificados
+
+- `apps/api/prisma/schema.prisma` — PushSubscription model + push field + User relation
+- `apps/api/src/modules/notifications/notifications.service.ts` — Push integration
+- `apps/api/src/modules/notifications/notifications.controller.ts` — 4 endpoints
+- `apps/api/src/modules/notifications/notifications.module.ts` — PushService provider
+- `apps/api/.env.example` — VAPID vars
+- `apps/api/package.json` — web-push dependency
+- `docker-compose.yml` — VAPID env vars
+- `apps/web/index.html` — manifest + PWA meta tags
+- `apps/web/src/App.tsx` — Push init/cleanup
+- `apps/web/src/features/notifications/components/NotificationPanel.tsx` — Mute button + activation banner
+- `apps/web/src/pages/Notifications/NotificationsPage.tsx` — Push toggle in preferences
+- `apps/web/src/features/notifications/services/notifications.api.ts` — Push field in types
+- `apps/web/src/features/notifications/hooks/useNotifications.ts` — Re-export push hook
+
+### Environment Variables (novas)
+
+```env
+VAPID_PUBLIC_KEY=<generated>
+VAPID_PRIVATE_KEY=<generated>
+VAPID_SUBJECT=mailto:suporte@nexusatemporal.com
+```
+
+---
+
 ## [2.65.2] - 2026-03-16 - Users CRUD + Token Version Security + Login Redirect
 
 ### Settings > Users — Refatoração do CRUD
