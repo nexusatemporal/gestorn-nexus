@@ -7,6 +7,29 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ---
 
+## [2.73.1] - 2026-03-30 - Retry Provision + Slug Alternativo
+
+### feat(tenants): Retry provision com fallback de slug para conflitos soft-deleted
+
+#### Backend
+- **feat(tenants): Endpoint retry-provision** — `POST /tenants/:id/retry-provision` permite retentar provisioning de tenants com status FAILED. Reseta para PENDING, re-executa `provisionOnOneNexus()`, e retorna erro se falhar novamente. Acesso: SUPERADMIN, ADMINISTRATIVO, GESTOR.
+- **feat(tenants): Camada 3 — slug alternativo** — Quando slug original falha e recovery por slug também falha (conflito com tenant soft-deleted/schema órfão), tenta provisionar com slug alternativo único (sufixo baseado em timestamp). Só marca FAILED se todas as 3 camadas falharem.
+- **refactor(tenants): Payload extraído** — Payload de provisioning extraído para variável reutilizável entre Camada 1 e Camada 3.
+
+#### Frontend
+- **feat(clients): Estado FAILED com botão retry** — Aba Módulos exibe mensagem de erro + botão "Tentar Novamente" com spinner quando provisioning falha.
+- **feat(clients): Estado PENDING com spinner** — Aba Módulos exibe spinner amarelo "Provisionando..." (antes era mensagem estática).
+- **fix(clients): useModulesTree condicionada** — Query de módulos só dispara se tenant está PROVISIONED, evitando requests desnecessários.
+- **feat(clients): Hook useRetryProvision** — Mutation com invalidação de cache e feedback via toast.
+
+### Arquivos Modificados
+- `apps/api/src/modules/tenants/tenants.controller.ts` — Novo endpoint retry-provision
+- `apps/api/src/modules/tenants/tenants.service.ts` — Camada 3 + retryProvision()
+- `apps/web/src/features/clients/components/ClientModulesTab.tsx` — UI estados FAILED/PENDING
+- `apps/web/src/features/clients/hooks/useClientModules.ts` — useRetryProvision + isProvisioned flag
+
+---
+
 ## [2.73.0] - 2026-03-30 - Módulos Personalizados nos Planos + Integração One Nexus
 
 ### feat(plans): CRUD completo de Planos com árvore hierárquica de módulos One Nexus
