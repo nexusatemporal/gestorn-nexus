@@ -7,6 +7,31 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ---
 
+## [2.73.3] - 2026-03-30 - Fix Módulos: Core Lock + Toast Honesto + Cascata Pai→Filhos
+
+### fix(modules): Correções na aba Módulos do cliente — feedback honesto, lock de core e cascata
+
+#### Backend
+- **fix(one-nexus): Parse response body do toggle** — `toggleModules()` agora lê o campo `skipped` na resposta da API One Nexus, em vez de retornar sucesso cego para qualquer HTTP 200. Retorna `{ success, skipped[] }` com detalhes dos módulos ignorados.
+- **fix(tenants): Propagar skipped no toggle** — `tenantsService.toggleModules()` repassa array `skipped` ao frontend para feedback preciso.
+- **feat(one-nexus): Interface isCore** — Adicionado `isCore?: boolean` às interfaces `OneNexusModuleTree` e `OneNexusModuleChild`, capturando dado que a API One Nexus já retornava mas era descartado.
+- **feat(one-nexus): Interface ToggleModulesResult** — Nova interface estruturada para resultado de toggle com `success` e `skipped[]`.
+
+#### Frontend
+- **fix(modules): Cascata pai → filhos** — `handleToggleParent` agora envia pai + todos os filhos no mesmo request, corrigindo bug onde toggle do pai não afetava os filhos (One Nexus não cascateia automaticamente).
+- **fix(modules): Toast honesto para módulos core** — Quando a API retorna módulos `skipped` (core), exibe toast amarelo de warning em vez de verde de sucesso falso.
+- **feat(modules): Lock visual em módulos core** — Módulos com `isCore: true` (Dashboard, Configurações + 9 filhos) exibem ícone de cadeado + "Obrigatório" no lugar do toggle, impedindo cliques desnecessários.
+- **feat(modules): Interface isCore** — Adicionado `isCore?: boolean` às interfaces `ModuleTree` e `ModuleChild` (sincronizado em `useClientModules.ts` e `plans-admin.api.ts`).
+
+### Arquivos Modificados
+- `apps/api/src/modules/integrations/one-nexus/one-nexus.service.ts` — Interfaces + toggleModules() com parse de response
+- `apps/api/src/modules/tenants/tenants.service.ts` — applyPlanModules() + toggleModules() adaptados
+- `apps/web/src/features/clients/components/ClientModulesTab.tsx` — Lock core + cascata pai→filhos
+- `apps/web/src/features/clients/hooks/useClientModules.ts` — Interface isCore + toast warning
+- `apps/web/src/features/settings/api/plans-admin.api.ts` — Interface isCore
+
+---
+
 ## [2.73.1] - 2026-03-30 - Retry Provision + Slug Alternativo
 
 ### feat(tenants): Retry provision com fallback de slug para conflitos soft-deleted

@@ -6,6 +6,7 @@ export interface ModuleChild {
   slug: string;
   icon: string;
   isEnabled: boolean;
+  isCore?: boolean;
 }
 
 export interface ModuleTree {
@@ -14,6 +15,7 @@ export interface ModuleTree {
   slug: string;
   icon: string;
   isEnabled: boolean;
+  isCore?: boolean;
   children: ModuleChild[];
 }
 

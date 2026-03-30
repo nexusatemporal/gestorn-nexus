@@ -222,14 +222,19 @@ export class TenantsService {
         }
       }
 
-      const ok = await this.oneNexusService.toggleModules(oneNexusTenantId, toggles);
+      const result = await this.oneNexusService.toggleModules(oneNexusTenantId, toggles);
 
-      if (ok) {
+      if (result.success) {
         const enabledCount = toggles.filter((t) => t.isEnabled).length;
         this.logger.log(
           `[OneNexus] ✅ Módulos do plano aplicados: ${companyName} | ` +
           `${enabledCount}/${toggles.length} habilitados`,
         );
+        if (result.skipped.length > 0) {
+          this.logger.warn(
+            `[OneNexus] ⚠️ ${result.skipped.length} módulo(s) core ignorados: ${result.skipped.map((s) => s.slug).join(', ')}`,
+          );
+        }
       } else {
         this.logger.warn(
           `[OneNexus] ⚠️ Falha ao aplicar módulos do plano para ${companyName}. ` +
@@ -979,7 +984,7 @@ export class TenantsService {
     modules: { moduleId: string; isEnabled: boolean }[],
     currentUserId: string,
     currentUserRole: UserRole,
-  ): Promise<{ success: boolean }> {
+  ): Promise<{ success: boolean; skipped?: { moduleId: string; slug: string; reason: string }[] }> {
     const tenant = await this.prisma.tenant.findUnique({
       where: { id: tenantId },
       include: { client: { select: { vendedorId: true } } },
@@ -992,11 +997,11 @@ export class TenantsService {
       throw new BadRequestException('Tenant não provisionado no One Nexus');
     }
 
-    const ok = await this.oneNexusService.toggleModules(tenant.tenantUuid, modules);
-    if (!ok) {
+    const result = await this.oneNexusService.toggleModules(tenant.tenantUuid, modules);
+    if (!result.success) {
       throw new BadRequestException('Falha ao atualizar módulos no One Nexus');
     }
-    return { success: true };
+    return { success: true, skipped: result.skipped };
   }
 
   /**

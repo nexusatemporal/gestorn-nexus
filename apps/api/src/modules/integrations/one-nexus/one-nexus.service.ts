@@ -10,6 +10,7 @@ export interface OneNexusModuleChild {
   slug: string;
   icon: string;
   isEnabled: boolean;
+  isCore?: boolean;
 }
 
 export interface OneNexusModuleTree {
@@ -18,7 +19,13 @@ export interface OneNexusModuleTree {
   slug: string;
   icon: string;
   isEnabled: boolean;
+  isCore?: boolean;
   children: OneNexusModuleChild[];
+}
+
+export interface ToggleModulesResult {
+  success: boolean;
+  skipped: { moduleId: string; slug: string; reason: string }[];
 }
 
 export interface OneNexusImpersonateResponse {
@@ -324,24 +331,46 @@ export class OneNexusService implements OnModuleInit {
   async toggleModules(
     oneNexusTenantId: string,
     modules: { moduleId: string; isEnabled: boolean }[],
-  ): Promise<boolean> {
+  ): Promise<ToggleModulesResult> {
     try {
       this.logger.log(`[OneNexus] Toggling ${modules.length} módulo(s) para tenant ${oneNexusTenantId}`);
-      await firstValueFrom(
+      const response = await firstValueFrom(
         this.httpService.patch(
           `${this.apiUrl}/tenants/${oneNexusTenantId}/modules`,
           { modules },
           { headers: { ...this.authHeaders, 'Content-Type': 'application/json' } },
         ),
       );
+
+      const data = response.data;
+      const skipped: ToggleModulesResult['skipped'] = [];
+
+      if (data?.updated && Array.isArray(data.updated)) {
+        for (const item of data.updated) {
+          if (item.skipped) {
+            skipped.push({
+              moduleId: item.moduleId || '',
+              slug: item.slug || '',
+              reason: item.reason || 'Core module',
+            });
+          }
+        }
+      }
+
+      if (skipped.length > 0) {
+        this.logger.warn(
+          `[OneNexus] ⚠️ ${skipped.length} módulo(s) ignorados (core): ${skipped.map((s) => s.slug).join(', ')}`,
+        );
+      }
+
       this.logger.log(`[OneNexus] ✅ Módulos atualizados com cascata: ${oneNexusTenantId}`);
-      return true;
+      return { success: true, skipped };
     } catch (error) {
       this.logger.error(
         `[OneNexus] ❌ Falha ao fazer toggle de módulos para tenant ${oneNexusTenantId}: ` +
         (error?.response?.data?.message || error?.message || 'Erro desconhecido'),
       );
-      return false;
+      return { success: false, skipped: [] };
     }
   }
 

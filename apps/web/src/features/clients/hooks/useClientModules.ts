@@ -48,6 +48,7 @@ export interface ModuleChild {
   slug: string;
   icon: string;
   isEnabled: boolean;
+  isCore?: boolean;
 }
 
 export interface ModuleTree {
@@ -56,6 +57,7 @@ export interface ModuleTree {
   slug: string;
   icon: string;
   isEnabled: boolean;
+  isCore?: boolean;
   children: ModuleChild[];
 }
 
@@ -75,9 +77,14 @@ export const useToggleModules = (tenantId: string | undefined) => {
   return useMutation({
     mutationFn: (modules: { moduleId: string; isEnabled: boolean }[]) =>
       api.patch(`/tenants/${tenantId}/modules/toggle`, { modules }).then((r) => r.data),
-    onSuccess: () => {
+    onSuccess: (data: { success: boolean; skipped?: { slug: string; reason: string }[] }) => {
       queryClient.invalidateQueries({ queryKey: ['modules-tree', tenantId] });
-      toast.success('Módulo atualizado com sucesso!');
+      if (data?.skipped?.length) {
+        const names = data.skipped.map((s) => s.slug).join(', ');
+        toast.warning(`Módulo(s) obrigatório(s) não podem ser alterados: ${names}`);
+      } else {
+        toast.success('Módulo atualizado com sucesso!');
+      }
     },
     onError: (error: any) => {
       const msg = error?.response?.data?.message || 'Erro ao atualizar módulo';

@@ -33,6 +33,7 @@ import {
   Globe,
   Instagram,
   Link,
+  Lock,
   type LucideIcon,
 } from 'lucide-react';
 import {
@@ -262,11 +263,18 @@ function ModuleCard({
         )}
 
         {/* Toggle master */}
-        <Toggle
-          checked={module.isEnabled}
-          onChange={() => onToggleParent(module)}
-          disabled={isPending}
-        />
+        {module.isCore ? (
+          <div className="shrink-0 flex items-center gap-1.5 text-zinc-500" title="Módulo obrigatório — não pode ser desativado">
+            <Lock size={12} />
+            <span className="text-[10px] font-medium">Obrigatório</span>
+          </div>
+        ) : (
+          <Toggle
+            checked={module.isEnabled}
+            onChange={() => onToggleParent(module)}
+            disabled={isPending}
+          />
+        )}
       </div>
 
       {/* Filhos */}
@@ -283,12 +291,16 @@ function ModuleCard({
               <span className={`flex-1 text-xs ${child.isEnabled ? (isDark ? 'text-zinc-200' : 'text-zinc-800') : 'text-zinc-500'}`}>
                 {child.name}
               </span>
-              <Toggle
-                size="sm"
-                checked={child.isEnabled}
-                onChange={() => onToggleChild(module.id, child.id, !child.isEnabled)}
-                disabled={isPending}
-              />
+              {child.isCore ? (
+                <Lock size={10} className="shrink-0 text-zinc-500" />
+              ) : (
+                <Toggle
+                  size="sm"
+                  checked={child.isEnabled}
+                  onChange={() => onToggleChild(module.id, child.id, !child.isEnabled)}
+                  disabled={isPending}
+                />
+              )}
             </div>
           ))}
         </div>
@@ -326,7 +338,12 @@ export function ClientModulesTab({ clientId }: Props) {
   const totalModules = tree.reduce((sum, m) => sum + 1 + m.children.length, 0);
 
   const handleToggleParent = (mod: ModuleTree) => {
-    toggleMutation.mutate([{ moduleId: mod.id, isEnabled: !mod.isEnabled }]);
+    const newState = !mod.isEnabled;
+    const toggles = [
+      { moduleId: mod.id, isEnabled: newState },
+      ...mod.children.map((c) => ({ moduleId: c.id, isEnabled: newState })),
+    ];
+    toggleMutation.mutate(toggles);
   };
 
   const handleToggleChild = (_parentId: string, childId: string, isEnabled: boolean) => {
