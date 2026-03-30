@@ -75,8 +75,8 @@ export class TenantsService {
 
     const slug = OneNexusService.buildSlug(client.company);
 
-    // Chamar API do One Nexus
-    const result = await this.oneNexusService.provision({
+    // Payload de provisioning (extraído para reutilizar na Camada 3)
+    const provisionPayload = {
       name: client.company,
       slug,
       ownerName: client.contactName,
@@ -86,7 +86,10 @@ export class TenantsService {
       billingEmail: client.email,
       taxId: client.cpfCnpj && client.cpfCnpj !== 'PENDING' ? client.cpfCnpj : undefined,
       country: 'BR',
-    });
+    };
+
+    // Camada 1: Chamar API do One Nexus com slug original
+    const result = await this.oneNexusService.provision(provisionPayload);
 
     if (result) {
       // Sucesso: salvar tenantUuid e marcar como PROVISIONED
@@ -108,7 +111,7 @@ export class TenantsService {
       await this.applyPlanModules(result.tenant.id, client.plan?.includedModules, client.company);
     } else {
       // Falha na resposta — mas o tenant PODE ter sido criado no One Nexus (ex: 502 Bad Gateway).
-      // Tentar recovery: buscar pelo slug para recuperar o UUID.
+      // Camada 2: Tentar recovery: buscar pelo slug para recuperar o UUID.
       this.logger.warn(
         `[OneNexus] ⚠️ Provisioning retornou null para ${client.company}. Tentando recovery por slug...`,
       );
@@ -134,19 +137,51 @@ export class TenantsService {
         // ✅ Aplicar módulos do plano automaticamente (fire-and-forget)
         await this.applyPlanModules(recovered.id, client.plan?.includedModules, client.company);
       } else {
-        // Recovery falhou — tenant realmente não foi criado
-        await this.prisma.tenant.update({
-          where: { id: tenant.id },
-          data: {
-            provisioningStatus: 'FAILED',
-            provisioningError: 'Falha ao comunicar com a API do One Nexus. Recovery por slug também falhou.',
-          },
-        });
+        // Camada 3: Slug pode ter conflito com tenant soft-deleted (schema órfão).
+        // Tentar provisionar com slug alternativo único.
+        const uniqueSuffix = Date.now().toString(36).slice(-5);
+        const uniqueSlug = `${slug}-${uniqueSuffix}`.substring(0, 50);
 
         this.logger.warn(
-          `[OneNexus] ⚠️ Provisioning falhou para ${client.company} e recovery não encontrou tenant. ` +
-          `Cliente criado normalmente no Gestor. Provisione manualmente.`,
+          `[OneNexus] ⚠️ Tentando slug alternativo: ${uniqueSlug} (original '${slug}' pode ter conflito com tenant soft-deleted)`,
         );
+
+        const retryResult = await this.oneNexusService.provision({
+          ...provisionPayload,
+          slug: uniqueSlug,
+        });
+
+        if (retryResult) {
+          await this.prisma.tenant.update({
+            where: { id: tenant.id },
+            data: {
+              tenantUuid: retryResult.tenant.id,
+              provisioningStatus: 'PROVISIONED',
+              provisioningError: null,
+            },
+          });
+
+          this.logger.log(
+            `[OneNexus] ✅ Tenant provisionado com slug alternativo: ${client.company} | ` +
+            `ID: ${retryResult.tenant.id} | Slug: ${uniqueSlug}`,
+          );
+
+          await this.applyPlanModules(retryResult.tenant.id, client.plan?.includedModules, client.company);
+        } else {
+          // Falha real — API One Nexus indisponível
+          await this.prisma.tenant.update({
+            where: { id: tenant.id },
+            data: {
+              provisioningStatus: 'FAILED',
+              provisioningError: 'Falha ao comunicar com a API do One Nexus. Tentativas com slug original e alternativo falharam.',
+            },
+          });
+
+          this.logger.warn(
+            `[OneNexus] ⚠️ Provisioning falhou para ${client.company} com slug original e alternativo. ` +
+            `Cliente criado normalmente no Gestor. Provisione manualmente.`,
+          );
+        }
       }
     }
   }
@@ -207,6 +242,50 @@ export class TenantsService {
         `${error?.message || 'Erro desconhecido'}. Configurar manualmente.`,
       );
     }
+  }
+
+  /**
+   * Retenta o provisioning de um tenant com status FAILED.
+   * Reseta para PENDING e re-executa provisionOnOneNexus().
+   */
+  async retryProvision(
+    tenantId: string,
+    currentUserId: string,
+    currentUserRole: UserRole,
+  ) {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      include: { client: { select: { id: true, vendedorId: true } } },
+    });
+
+    if (!tenant) throw new NotFoundException(`Tenant ${tenantId} não encontrado`);
+    await this.validateAccess(tenant.client?.vendedorId ?? null, currentUserId, currentUserRole);
+
+    if (tenant.provisioningStatus === 'PROVISIONED') {
+      return { message: 'Tenant já está provisionado', tenant };
+    }
+
+    // Resetar para PENDING antes de chamar provisionOnOneNexus
+    await this.prisma.tenant.update({
+      where: { id: tenantId },
+      data: { provisioningStatus: 'PENDING', provisioningError: null },
+    });
+
+    await this.provisionOnOneNexus(tenant.client.id);
+
+    // Verificar status final — lançar erro se ainda FAILED
+    const updated = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      include: { client: { select: { id: true, company: true } } },
+    });
+
+    if (updated?.provisioningStatus === 'FAILED') {
+      throw new BadRequestException(
+        updated.provisioningError || 'Provisioning falhou. Verifique a conexão com o One Nexus.',
+      );
+    }
+
+    return updated;
   }
 
   /**

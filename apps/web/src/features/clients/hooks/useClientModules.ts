@@ -61,11 +61,11 @@ export interface ModuleTree {
 
 export type ModulePreset = 'all' | 'basic' | 'clinical' | 'business' | 'enterprise' | 'none';
 
-export const useModulesTree = (tenantId: string | undefined) => {
+export const useModulesTree = (tenantId: string | undefined, isProvisioned: boolean = false) => {
   return useQuery<ModuleTree[]>({
     queryKey: ['modules-tree', tenantId],
     queryFn: () => api.get(`/tenants/${tenantId}/modules/tree`).then((r) => r.data),
-    enabled: !!tenantId,
+    enabled: !!tenantId && isProvisioned,
     staleTime: 30 * 1000, // 30s — módulos não mudam com frequência
   });
 };
@@ -109,6 +109,21 @@ export const useApplyModulePreset = (tenantId: string | undefined) => {
       toast.success(`Preset "${preset}" aplicado com sucesso!`);
     },
     onError: () => toast.error('Erro ao aplicar preset'),
+  });
+};
+
+export const useRetryProvision = (tenantId: string | undefined) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post(`/tenants/${tenantId}/retry-provision`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tenant', 'client'] });
+      queryClient.invalidateQueries({ queryKey: ['modules-tree', tenantId] });
+      toast.success('Provisioning realizado com sucesso!');
+    },
+    onError: () => {
+      toast.error('Falha no provisioning. Tente novamente mais tarde.');
+    },
   });
 };
 

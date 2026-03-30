@@ -225,6 +225,19 @@ export class TenantsController {
   }
 
   /**
+   * POST /tenants/:id/retry-provision
+   * Retenta provisioning de um tenant com status FAILED.
+   *
+   * Requer: SUPERADMIN, ADMINISTRATIVO ou GESTOR
+   */
+  @Post(':id/retry-provision')
+  @Roles(UserRole.SUPERADMIN, UserRole.ADMINISTRATIVO, UserRole.GESTOR)
+  @HttpCode(HttpStatus.OK)
+  async retryProvision(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.tenantsService.retryProvision(id, user.id, user.role as UserRole);
+  }
+
+  /**
    * GET /tenants/:id/modules/tree
    * Retorna árvore hierárquica de módulos do tenant (V3).
    * 12 pais com children[], isEnabled efetivo.

@@ -41,6 +41,7 @@ import {
   useToggleModules,
   useEnableAllModules,
   useApplyModulePreset,
+  useRetryProvision,
   type ModuleTree,
   type ModulePreset,
 } from '../hooks/useClientModules';
@@ -307,16 +308,16 @@ export function ClientModulesTab({ clientId }: Props) {
   const isDark = theme === 'dark';
 
   const { data: tenant, isLoading: loadingTenant } = useClientTenant(clientId);
-  const { data: tree = [], isLoading: loadingTree, refetch } = useModulesTree(tenant?.id);
+  const isProvisioned = tenant?.provisioningStatus === 'PROVISIONED';
+  const { data: tree = [], isLoading: loadingTree, refetch } = useModulesTree(tenant?.id, isProvisioned);
 
   const toggleMutation    = useToggleModules(tenant?.id);
   const enableAllMutation = useEnableAllModules(tenant?.id);
   const presetMutation    = useApplyModulePreset(tenant?.id);
+  const retryMutation     = useRetryProvision(tenant?.id);
 
   const isPending = toggleMutation.isPending || enableAllMutation.isPending || presetMutation.isPending;
   const isLoading = loadingTenant || loadingTree;
-
-  const isProvisioned = tenant?.provisioningStatus === 'PROVISIONED';
 
   const totalEnabled = tree.reduce((sum, m) => {
     const childCount = m.children.filter((c) => c.isEnabled).length;
@@ -353,17 +354,39 @@ export function ClientModulesTab({ clientId }: Props) {
     );
   }
 
-  // ── Não provisionado ──────────────────────────────────────────
+  // ── Provisioning FAILED — com botão retry ─────────────────────
+  if (tenant.provisioningStatus === 'FAILED') {
+    return (
+      <div className="py-12 text-center space-y-4">
+        <div className="flex items-center justify-center gap-2 text-red-500">
+          <AlertTriangle size={20} />
+          <p className="text-sm font-medium">Provisioning falhou</p>
+        </div>
+        <p className="text-xs text-zinc-500 max-w-sm mx-auto">
+          O provisionamento no One Nexus falhou. Clique abaixo para tentar novamente.
+        </p>
+        <button
+          onClick={() => retryMutation.mutate()}
+          disabled={retryMutation.isPending}
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-orange-500 hover:bg-orange-400 text-white text-sm font-medium transition-colors disabled:opacity-50"
+        >
+          <RefreshCw size={14} className={retryMutation.isPending ? 'animate-spin' : ''} />
+          {retryMutation.isPending ? 'Provisionando...' : 'Tentar Novamente'}
+        </button>
+      </div>
+    );
+  }
+
+  // ── Provisioning PENDING — aguardando ───────────────────────
   if (!isProvisioned || !tenant.tenantUuid) {
     return (
       <div className="py-12 text-center space-y-3">
         <div className="flex items-center justify-center gap-2 text-yellow-500">
-          <AlertTriangle size={20} />
-          <p className="text-sm font-medium">Tenant não provisionado</p>
+          <RefreshCw size={18} className="animate-spin" />
+          <p className="text-sm font-medium">Provisionando...</p>
         </div>
         <p className="text-xs text-zinc-500 max-w-sm mx-auto">
-          O tenant ainda não foi provisionado no One Nexus. Os módulos hierárquicos ficam
-          disponíveis após o provisionamento ser concluído.
+          O tenant está sendo provisionado no One Nexus. Aguarde alguns instantes.
         </p>
       </div>
     );
