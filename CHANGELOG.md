@@ -7,6 +7,36 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ---
 
+## [2.73.7] - 2026-03-31 - Redesign Abas Contrato e Financeiro do Modal de Cliente
+
+### refactor(clients): Redesign visual completo das abas Contrato e Financeiro
+
+#### Frontend — Aba Contrato (`ClientContractTab.tsx`)
+- **refactor(clients): Layout 2 colunas** — Grid reorganizado de 3 colunas espremidas para 2 colunas (Assinatura | Valores & Pagamento) com melhor hierarquia visual.
+- **refactor(clients): DataRow refatorado** — Label à esquerda, valor à direita com borda tracejada sutil, suporte a `accent` (nexus-orange) e `mono` (font-mono para valores monetários).
+- **refactor(clients): Status Badge com ícone** — Badge de status da assinatura agora inclui ícone contextual (CheckCircle2, AlertCircle, XCircle, Clock4, CircleDot) + borda colorida.
+- **refactor(clients): Mini-cards de limites** — 4 cards de métricas (Usuários, Unidades, Storage, Módulos) com ícone laranja em container, número grande e label.
+- **feat(clients): Módulos hierárquicos** — Seção "Módulos Incluídos" agora cruza `plan.includedModules` com o catálogo da API (`useModulesCatalog`), exibindo accordion pai→filhos com ícones coloridos, nomes legíveis e contagem de filhos. Substituiu tags de códigos brutos ilegíveis.
+- **refactor(clients): Negociação com destaque visual** — Resumo e notas de implementação com borda lateral colorida (amber/indigo) para distinção clara. Desconto anual como badge `-10%`.
+- **refactor(clients): SectionHeader extraído** — Sub-componente reutilizável para headers de seção com ícone + label uppercase tracking-widest.
+
+#### Frontend — Aba Financeiro (`ClientFinanceTab.tsx`)
+- **refactor(clients): KPI cards limpos** — Removidos ícones decorativos gigantes (size={64}) do fundo e cores semânticas nos valores. Agora segue padrão mini-card: ícone `text-nexus-orange`, valor em cor neutra `font-mono font-bold`, dot colorido para diferenciar Pago/Pendente/Vencido.
+- **refactor(clients): Fontes compactas** — Valores reduzidos de `text-2xl` para `text-sm md:text-base` (adequado para contexto de modal).
+- **refactor(clients): SectionHeader com badge** — Sub-componente extraído com suporte a badge opcional (contagem de registros, período).
+- **refactor(clients): Ícones consistentes** — DollarSign nos vencimentos agora usa `text-nexus-orange` (era `text-amber-500`). Badges de status na tabela com ícone contextual.
+- **fix(clients): Overflow mobile KPI** — Grid `grid-cols-3` com `text-sm` nos valores para evitar overflow em telas estreitas (320px).
+
+#### Design System
+- Utilização dos agentes `ui-designer` e `ui-auditor` para gerar código e validar consistência visual.
+- Auditoria pós-redesign: **PASS** (0 críticos, 1 major corrigido antes do deploy final).
+
+### Arquivos Modificados
+- `apps/web/src/features/clients/components/ClientContractTab.tsx` — Redesign completo
+- `apps/web/src/features/clients/components/ClientFinanceTab.tsx` — Redesign completo
+
+---
+
 ## [2.73.6] - 2026-03-31 - Aba Financeiro Funcional no Modal de Cliente
 
 ### feat(clients): Aba Financeiro com resumo, próximos vencimentos e histórico de transações
