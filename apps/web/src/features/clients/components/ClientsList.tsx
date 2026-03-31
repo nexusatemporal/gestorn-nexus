@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import { ClientModulesTab } from './ClientModulesTab';
 import { ClientContractTab } from './ClientContractTab';
+import { ClientFinanceTab } from './ClientFinanceTab';
 import { useUIStore } from '@/stores/useUIStore';
 import { useApiQuery } from '@/hooks/useApi';
 import { api } from '@/services/api';
@@ -1467,7 +1468,13 @@ const ClientDetailModal: React.FC<{
             </div>
           )}
 
-          {!['tenant', 'geral', 'modulos', 'contrato'].includes(activeTab) && (
+          {activeTab === 'financeiro' && (
+            <div className="animate-in fade-in duration-300">
+              <ClientFinanceTab clientId={client.id} />
+            </div>
+          )}
+
+          {!['tenant', 'geral', 'modulos', 'contrato', 'financeiro'].includes(activeTab) && (
             <div className="flex items-center justify-center h-48 text-zinc-500 italic">
               Carregando dados de {activeTab}...
             </div>

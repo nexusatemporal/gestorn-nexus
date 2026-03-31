@@ -7,6 +7,26 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ---
 
+## [2.73.6] - 2026-03-31 - Aba Financeiro Funcional no Modal de Cliente
+
+### feat(clients): Aba Financeiro com resumo, próximos vencimentos e histórico de transações
+
+#### Frontend
+- **feat(clients): ClientFinanceTab** — Novo componente extraído (`ClientFinanceTab.tsx`) com 3 seções: cards de resumo, próximos vencimentos e histórico completo. Dados via `useClientTransactions` existente, sem alteração no backend.
+- **feat(clients): Cards de Resumo** — Total Pago (verde), Total Pendente (amarelo), Total Vencido (vermelho) com valores `font-mono` e ícones. Grid 3 colunas desktop, 1 coluna mobile.
+- **feat(clients): Próximos Vencimentos** — Lista dos próximos 7 dias com descrição, valor, data e badge colorido por urgência (≤2d vermelho, 3-5d amarelo, 6-7d verde, "Hoje").
+- **feat(clients): Histórico de Transações** — Tabela desktop (6 colunas: Descrição, Valor, Data, Vencimento, Status, Categoria) + cards mobile. Ícone `Repeat` para transações recorrentes. Inclui assinaturas e transações avulsas (Setup, Suporte, Consultoria, Outros).
+- **fix(finance): Recharts Tooltip TS** — Corrigido tipo do formatter de `number | undefined` para `unknown` + `Number()` cast, eliminando 2 erros pré-existentes de TypeScript no `Finance.tsx`.
+
+### Arquivos Novos
+- `apps/web/src/features/clients/components/ClientFinanceTab.tsx` — Componente da aba
+
+### Arquivos Modificados
+- `apps/web/src/features/clients/components/ClientsList.tsx` — Import + render da aba financeiro no modal
+- `apps/web/src/features/finance/Finance.tsx` — Fix tipo Recharts formatter
+
+---
+
 ## [2.73.4] - 2026-03-31 - Aba Contrato Funcional no Modal de Cliente
 
 ### feat(clients): Aba Contrato com dados de assinatura, valores, limites e negociação

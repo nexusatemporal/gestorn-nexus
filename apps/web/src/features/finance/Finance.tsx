@@ -492,7 +492,7 @@ export const Finance: React.FC = () => {
                   <YAxis stroke="#52525b" fontSize={12} axisLine={false} tickLine={false} />
                   <Tooltip
                     contentStyle={{ backgroundColor: isDark ? '#18181b' : '#fff', border: isDark ? '1px solid #27272a' : '1px solid #e4e4e7', borderRadius: '12px' }}
-                    formatter={(value: number | undefined) => `R$ ${Math.abs(value || 0).toLocaleString('pt-BR')}`}
+                    formatter={(value: unknown) => `R$ ${Math.abs(Number(value) || 0).toLocaleString('pt-BR')}`}
                   />
                   <Legend />
                   <Area
@@ -517,7 +517,7 @@ export const Finance: React.FC = () => {
                   <YAxis stroke="#52525b" fontSize={12} axisLine={false} tickLine={false} />
                   <Tooltip
                     contentStyle={{ backgroundColor: isDark ? '#18181b' : '#fff', border: isDark ? '1px solid #27272a' : '1px solid #e4e4e7', borderRadius: '12px' }}
-                    formatter={(value: number | undefined) => `R$ ${Math.abs(value || 0).toLocaleString('pt-BR')}`}
+                    formatter={(value: unknown) => `R$ ${Math.abs(Number(value) || 0).toLocaleString('pt-BR')}`}
                   />
                   <Legend />
                   {/* TODAS empilhadas com stackId="1" */}
