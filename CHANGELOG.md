@@ -7,6 +7,30 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ---
 
+## [2.73.4] - 2026-03-31 - Aba Contrato Funcional no Modal de Cliente
+
+### feat(clients): Aba Contrato com dados de assinatura, valores, limites e negociação
+
+#### Frontend
+- **feat(clients): ClientContractTab** — Novo componente extraído (`ClientContractTab.tsx`) com 3 cards informativos + seção de negociação. Dados carregados via hooks dedicados, sem alteração no backend.
+- **feat(clients): Card Assinatura** — Status com badge colorido (ACTIVE/TRIALING/PAST_DUE/CANCELED/EXPIRED), ciclo de cobrança, dia de vencimento, próximo vencimento, período atual e período de graça.
+- **feat(clients): Card Valores** — Plano (nome + badge código), valor mensal, valor anual (com badge 10% desconto), taxa de setup, método de pagamento e gateway. Stripe-ready.
+- **feat(clients): Card Limites do Plano** — Máx. usuários, máx. unidades, armazenamento (GB) e contagem de módulos incluídos.
+- **feat(clients): Detalhes da Negociação** — Data de fechamento, primeiro pagamento, nº usuários contratados, trial, resumo da negociação e notas de implementação (whitespace-pre-wrap).
+- **feat(clients): Hook useClientDetail** — `GET /clients/:id` com conversão Decimal→Number para preços. staleTime 2min.
+- **feat(types): Interfaces de contrato** — `SubscriptionDetail`, `PlanDetail`, `ClientDetail` + enums `SubscriptionStatus`, `PaymentMethod`, `CancellationReason`.
+- **fix(clients): Layout cards uniforme** — Labels com largura fixa (110px) para alinhamento consistente, sem efeito pirâmide visual.
+
+### Arquivos Novos
+- `apps/web/src/features/clients/components/ClientContractTab.tsx` — Componente da aba
+- `apps/web/src/features/clients/hooks/useClientDetail.ts` — Hook de dados completos
+
+### Arquivos Modificados
+- `apps/web/src/types/index.ts` — Interfaces e enums de contrato
+- `apps/web/src/features/clients/components/ClientsList.tsx` — Import + render da aba no modal
+
+---
+
 ## [2.73.3] - 2026-03-30 - Fix Módulos: Core Lock + Toast Honesto + Cascata Pai→Filhos
 
 ### fix(modules): Correções na aba Módulos do cliente — feedback honesto, lock de core e cascata

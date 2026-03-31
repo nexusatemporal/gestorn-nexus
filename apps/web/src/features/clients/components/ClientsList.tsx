@@ -28,6 +28,7 @@ import {
   ChevronDown,
 } from 'lucide-react';
 import { ClientModulesTab } from './ClientModulesTab';
+import { ClientContractTab } from './ClientContractTab';
 import { useUIStore } from '@/stores/useUIStore';
 import { useApiQuery } from '@/hooks/useApi';
 import { api } from '@/services/api';
@@ -1460,7 +1461,13 @@ const ClientDetailModal: React.FC<{
             </div>
           )}
 
-          {!['tenant', 'geral', 'modulos'].includes(activeTab) && (
+          {activeTab === 'contrato' && (
+            <div className="animate-in fade-in duration-300">
+              <ClientContractTab clientId={client.id} />
+            </div>
+          )}
+
+          {!['tenant', 'geral', 'modulos', 'contrato'].includes(activeTab) && (
             <div className="flex items-center justify-center h-48 text-zinc-500 italic">
               Carregando dados de {activeTab}...
             </div>

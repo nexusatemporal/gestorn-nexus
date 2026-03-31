@@ -124,6 +124,107 @@ export interface ClientExtended extends Client {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
+// Subscription & Plan (detailed — for Contract tab)
+// ──────────────────────────────────────────────────────────────────────────
+
+export enum SubscriptionStatus {
+  TRIALING = 'TRIALING',
+  ACTIVE = 'ACTIVE',
+  PAST_DUE = 'PAST_DUE',
+  CANCELED = 'CANCELED',
+  EXPIRED = 'EXPIRED',
+}
+
+export enum PaymentMethod {
+  PIX = 'PIX',
+  CARTAO = 'CARTAO',
+  BOLETO = 'BOLETO',
+  TRANSFERENCIA = 'TRANSFERENCIA',
+}
+
+export enum CancellationReason {
+  PAYMENT_FAILURE = 'PAYMENT_FAILURE',
+  CUSTOMER_REQUEST = 'CUSTOMER_REQUEST',
+  PLAN_CHANGE = 'PLAN_CHANGE',
+  ADMIN_ACTION = 'ADMIN_ACTION',
+}
+
+export interface PlanDetail {
+  id: string;
+  name: string;
+  code: string;
+  product: ProductType;
+  priceMonthly: number;
+  priceAnnual: number;
+  setupFee: number;
+  maxUsers: number;
+  maxUnits: number;
+  storageGb: number;
+  includedModules: string[];
+  isActive: boolean;
+  isHighlighted: boolean;
+  sortOrder: number;
+}
+
+export interface SubscriptionDetail {
+  id: string;
+  clientId: string;
+  planId: string;
+  billingCycle: BillingCycle;
+  billingAnchorDay: number;
+  currentPeriodStart: string;
+  currentPeriodEnd: string;
+  nextBillingDate: string | null;
+  status: SubscriptionStatus;
+  gracePeriodDays: number;
+  canceledAt: string | null;
+  cancellationReason: CancellationReason | null;
+  amount: number;
+  metadata: Record<string, unknown> | null;
+  createdAt: string;
+  updatedAt: string;
+  plan?: PlanDetail;
+}
+
+export interface ClientDetail {
+  id: string;
+  contactName: string;
+  company: string;
+  cpfCnpj: string;
+  email: string;
+  phone: string;
+  productType: ProductType;
+  status: ClientStatus;
+  planId: string;
+  billingCycle: BillingCycle;
+  vendedorId: string;
+  leadId: string | null;
+  role: string | null;
+  trialEndsAt: string | null;
+  notes: string | null;
+  paymentMethod: string | null;
+  paymentGateway: string | null;
+  numberOfUsers: number;
+  closedAt: string | null;
+  firstPaymentDate: string | null;
+  dealSummary: string | null;
+  implementationNotes: string | null;
+  activeSubscriptionId: string | null;
+  nextDueDate: string | null;
+  createdAt: string;
+  updatedAt: string;
+  plan?: PlanDetail;
+  tenant?: TenantInfo;
+  vendedor?: { id: string; name: string; email: string; role: string; gestor?: { id: string; name: string } };
+  subscriptions?: Array<{
+    id: string;
+    billingAnchorDay: number | null;
+    nextBillingDate: string | null;
+    status: string;
+  }>;
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 // Lead
 // ──────────────────────────────────────────────────────────────────────────
 
