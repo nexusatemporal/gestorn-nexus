@@ -1,4 +1,5 @@
 import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
+import { timingSafeEqual } from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '@/prisma/prisma.service';
 import { IdempotencyService } from './idempotency.service';
@@ -45,7 +46,10 @@ export class AsaasWebhookService {
       return false;
     }
 
-    return token === expectedToken;
+    const tokenBuf = Buffer.from(token);
+    const expectedBuf = Buffer.from(expectedToken);
+    if (tokenBuf.length !== expectedBuf.length) return false;
+    return timingSafeEqual(tokenBuf, expectedBuf);
   }
 
   /**

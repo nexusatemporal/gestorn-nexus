@@ -1,10 +1,12 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '@/prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private prisma: PrismaService,
     private jwtService: JwtService,
@@ -26,15 +28,18 @@ export class AuthService {
     });
 
     if (!user || !user.isActive) {
+      this.logger.warn(`Login failed: user not found or inactive (${email})`);
       return null;
     }
 
     if (!user.passwordHash) {
+      this.logger.warn(`Login failed: no password set (${email})`);
       return null;
     }
 
     const isMatch = await bcrypt.compare(password, user.passwordHash);
     if (!isMatch) {
+      this.logger.warn(`Login failed: invalid password (${email})`);
       return null;
     }
 
@@ -46,14 +51,17 @@ export class AuthService {
     const payload = { sub: user.id, email: user.email, tokenVersion: user.tokenVersion };
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if (!process.env.JWT_SECRET) throw new Error('JWT_SECRET environment variable is required');
+    if (!process.env.JWT_REFRESH_SECRET) throw new Error('JWT_REFRESH_SECRET environment variable is required');
+
     const accessToken = this.jwtService.sign(payload, {
-      secret: process.env.JWT_SECRET || 'fallback-secret-change-in-prod',
+      secret: process.env.JWT_SECRET,
       expiresIn: (process.env.JWT_EXPIRES_IN || '1h') as any,
     });
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const refreshToken = this.jwtService.sign(payload, {
-      secret: process.env.JWT_REFRESH_SECRET || 'fallback-refresh-secret-change-in-prod',
+      secret: process.env.JWT_REFRESH_SECRET,
       expiresIn: (process.env.JWT_REFRESH_EXPIRES_IN || '7d') as any,
     });
 
@@ -86,9 +94,10 @@ export class AuthService {
 
     try {
       payload = this.jwtService.verify(rawRefreshToken, {
-        secret: process.env.JWT_REFRESH_SECRET || 'fallback-refresh-secret-change-in-prod',
+        secret: process.env.JWT_REFRESH_SECRET!,
       });
     } catch {
+      this.logger.warn('Refresh failed: invalid or expired refresh token');
       throw new UnauthorizedException('Refresh token invalido ou expirado');
     }
 
@@ -107,23 +116,26 @@ export class AuthService {
     });
 
     if (!user || !user.isActive || !user.refreshToken) {
+      this.logger.warn(`Refresh failed: user not found or inactive (${payload.sub})`);
       throw new UnauthorizedException('Usuario nao encontrado ou sessao invalida');
     }
 
     const isRefreshValid = await bcrypt.compare(rawRefreshToken, user.refreshToken);
     if (!isRefreshValid) {
+      this.logger.warn(`Refresh failed: invalid refresh token (${user.email})`);
       throw new UnauthorizedException('Refresh token invalido');
     }
 
     // Verificar tokenVersion — bloqueia refresh após password reset
     if ((payload.tokenVersion ?? 0) !== user.tokenVersion) {
+      this.logger.warn(`Refresh failed: token version mismatch (${user.email})`);
       throw new UnauthorizedException('Sessao expirada — faca login novamente');
     }
 
     const newPayload = { sub: user.id, email: user.email, tokenVersion: user.tokenVersion };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const newAccessToken = this.jwtService.sign(newPayload, {
-      secret: process.env.JWT_SECRET || 'fallback-secret-change-in-prod',
+      secret: process.env.JWT_SECRET!,
       expiresIn: (process.env.JWT_EXPIRES_IN || '1h') as any,
     });
 

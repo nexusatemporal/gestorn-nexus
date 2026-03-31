@@ -154,7 +154,8 @@ export class UsersService {
       throw new NotFoundException(`Usuário com email ${email} não encontrado`);
     }
 
-    return user;
+    const { passwordHash: _, refreshToken: _rt, tokenVersion: _tv, ...safeUser } = user;
+    return safeUser;
   }
 
   /**
@@ -208,7 +209,8 @@ export class UsersService {
       role: user.role,
     });
 
-    return user;
+    const { passwordHash: _, refreshToken: _rt, tokenVersion: _tv, ...safeUser } = user;
+    return safeUser;
   }
 
   /**
@@ -264,7 +266,8 @@ export class UsersService {
     });
 
     this.logger.log(`Usuario atualizado: ${updated.name} (${updated.email})`);
-    return updated;
+    const { passwordHash: _, refreshToken: _rt, tokenVersion: _tv, ...safeUpdated } = updated;
+    return safeUpdated;
   }
 
   /**

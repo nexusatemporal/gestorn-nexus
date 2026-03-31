@@ -10,6 +10,7 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { LeadsService } from '../leads/leads.service';
 import { UserRole, ProductType, VendorAssignmentMode, ClientRole } from '@prisma/client';
 import { CreateFormDto, UpdateFormDto, FormFieldDef } from './dto/create-form.dto';
+import { randomBytes } from 'crypto';
 
 /**
  * Forms Service — v2.64.0
@@ -536,7 +537,7 @@ export class FormsService {
       if (!existing || existing.id === excludeId) break;
 
       attempt++;
-      const suffix = Math.random().toString(36).substring(2, 6);
+      const suffix = randomBytes(3).toString('hex').substring(0, 4);
       slug = `${base}-${suffix}`;
     }
 

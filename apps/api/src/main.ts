@@ -3,6 +3,7 @@ import { ValidationPipe, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AppModule } from './app.module';
 import * as express from 'express';
+import helmet from 'helmet';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
@@ -10,7 +11,9 @@ async function bootstrap() {
   // Criar aplicação com raw body para webhooks
   const app = await NestFactory.create(AppModule, {
     rawBody: true,
-    logger: ['error', 'warn', 'log', 'debug', 'verbose'],
+    logger: process.env.NODE_ENV === 'production'
+      ? ['error', 'warn', 'log']
+      : ['error', 'warn', 'log', 'debug', 'verbose'],
   });
 
   const configService = app.get(ConfigService);
@@ -32,6 +35,12 @@ async function bootstrap() {
   logger.log(`✅ CORS habilitado para: ${corsOrigins.join(', ')}`);
 
   // ══════════════════════════════════════════════════════════════════════════════
+  // SECURITY HEADERS (Helmet)
+  // ══════════════════════════════════════════════════════════════════════════════
+  app.use(helmet());
+  logger.log('✅ Helmet security headers habilitados');
+
+  // ══════════════════════════════════════════════════════════════════════════════
   // GLOBAL PREFIX
   // ══════════════════════════════════════════════════════════════════════════════
   const apiPrefix = configService.get<string>('API_PREFIX', 'api/v1');
@@ -46,7 +55,7 @@ async function bootstrap() {
       forbidNonWhitelisted: true, // Rejeita se houver propriedades extras
       transform: true, // Transforma payloads em instâncias de DTO
       transformOptions: {
-        enableImplicitConversion: true, // Converte tipos automaticamente
+        enableImplicitConversion: true,
       },
     }),
   );

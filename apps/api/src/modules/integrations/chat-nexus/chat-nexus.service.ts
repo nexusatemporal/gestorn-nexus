@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
-import { createHmac } from 'crypto';
+import { createHmac, timingSafeEqual } from 'crypto';
 import type { AxiosResponse } from 'axios';
 
 export interface ChatNexusSsoResponse {
@@ -122,6 +122,9 @@ export class ChatNexusService {
       'sha256=' +
       createHmac('sha256', this.webhookSecret).update(rawBody).digest('hex');
 
-    return signature === expectedSignature;
+    const sigBuf = Buffer.from(signature);
+    const expectedBuf = Buffer.from(expectedSignature);
+    if (sigBuf.length !== expectedBuf.length) return false;
+    return timingSafeEqual(sigBuf, expectedBuf);
   }
 }

@@ -22,7 +22,7 @@ export class MailService {
         pass: this.config.get('SMTP_PASS'),
       },
       tls: {
-        rejectUnauthorized: false,
+        rejectUnauthorized: process.env.NODE_ENV === 'production',
       },
     });
   }

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 
 // Prisma
@@ -67,6 +68,11 @@ import { SearchModule } from './modules/search/search.module';
     ScheduleModule.forRoot(),
 
     // ══════════════════════════════════════════════════════════════════════════
+    // RATE LIMITING — 60 requests per minute per IP
+    // ══════════════════════════════════════════════════════════════════════════
+    ThrottlerModule.forRoot([{ ttl: 60000, limit: 120 }]),
+
+    // ══════════════════════════════════════════════════════════════════════════
     // AUTH - Autenticação JWT própria (v2.54.0 - substitui Clerk)
     // ══════════════════════════════════════════════════════════════════════════
     AuthModule,
@@ -107,6 +113,10 @@ import { SearchModule } from './modules/search/search.module';
     {
       provide: APP_GUARD,
       useClass: RolesGuard, // 2º - Verifica permissões
+    },
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard, // 3º - Rate limiting
     },
   ],
 })
