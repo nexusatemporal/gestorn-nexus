@@ -7,6 +7,60 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ---
 
+## [2.74.0] - 2026-04-01 - Relatório Pós-Impersonate + Aba Interações + Sync Bidirecional
+
+### feat(clients): Relatório pós-impersonate, aba Interações funcional e sync de sessões
+
+#### Backend — Sync Bidirecional de Sessões
+- **feat(clients): syncActiveImpersonateSessions()** — Ao carregar logs de impersonate, sessões expiradas (>120min TTL) sem `endedAt` são automaticamente marcadas como encerradas. Sessões recentes não são tocadas (evita encerrar sessões ativas).
+- **fix(clients): endImpersonate() retorna log completo** — Retorno alterado de `{ success }` para `{ success, log }` com include de user, permitindo ao frontend popular o overlay de relatório.
+
+#### Backend — Relatório Pós-Impersonate
+- **feat(schema): Campo `report` no ImpersonateLog** — Novo campo `String?` para armazenar relatório opcional pós-impersonate. Migration: `20260401120000_add_impersonate_report`.
+- **feat(clients): saveImpersonateReport()** — Novo método que valida ownership (dono do log ou SUPERADMIN), exige sessão encerrada, e salva o relatório.
+- **feat(clients): PATCH /clients/:id/impersonate/:logId/report** — Novo endpoint protegido por roles (SUPERADMIN, DESENVOLVEDOR, GESTOR) com validação Zod (1-2000 chars).
+
+#### Backend — Aba Interações
+- **feat(clients): getClientInteractions()** — Query de `ImpersonateLog` filtrada por `report IS NOT NULL` + período (30/60/90 dias), limitada a 100 registros.
+- **feat(clients): GET /clients/:id/interactions?days=30** — Novo endpoint com query param `days` validado para [30, 60, 90], default 30.
+
+#### Frontend — Card de Relatório Pós-Impersonate
+- **feat(clients): ImpersonateReportOverlay** — Novo componente overlay que aparece após encerrar sessão de impersonate. Campos auto-preenchidos (dev, início, fim, motivo) + textarea opcional + botões Salvar/Fechar. Design auditado por agentes ui-designer + ui-auditor.
+- **feat(clients): useSaveImpersonateReport** — Mutation com invalidação dupla (`impersonate-logs` + `client-interactions`).
+- **feat(clients): Botões "Encerrar" com mutateAsync** — Mobile e desktop agora usam `mutateAsync` para capturar o log retornado e exibir o overlay.
+
+#### Frontend — Aba Interações Funcional
+- **feat(clients): ClientInteractionsTab** — Novo componente substituindo o placeholder "Carregando dados de interacoes...". Lista de relatórios de impersonate com cards, filtro de período (pills 30d/60d/90d), loading state, empty state. Design auditado por agentes ui-designer + ui-auditor.
+- **feat(clients): useClientInteractions** — Hook com queryKey incluindo `days` para refetch automático ao trocar filtro.
+- **fix(clients): Aba Interações visível apenas para canImpersonate** — SUPERADMIN, DESENVOLVEDOR e GESTOR (evita 403 para VENDEDOR).
+
+#### Frontend — Correções Anteriores (mesma sessão)
+- **fix(clients): Aba Contrato — módulos dinâmicos do tenant** — Substituído `plan.includedModules` (estático) por `useModulesTree()` (dados reais do One Nexus). Label alterado de "Módulos Incluídos" para "Módulos Ativos".
+- **fix(clients): Aba Módulos — filhos de módulo core herdam lock** — Se o pai é `isCore`, todos os filhos mostram cadeado automaticamente, independente do retorno da API.
+- **fix(clients): border-l-2 twMerge bug** — Corrigido conflito de `border-l-2` + `border` em ClientContractTab e ClientInteractionsTab usando `border-t border-r border-b` explícito.
+
+#### Design & QA
+- Componentes auditados por agentes **ui-designer** (touch targets 44px mobile, grid responsivo, iOS zoom prevention) e **ui-auditor** (14 PASS, 1 FAIL corrigido, 7 WARN documentados).
+
+### Arquivos Novos
+- `apps/web/src/features/clients/components/ImpersonateReportOverlay.tsx`
+- `apps/web/src/features/clients/components/ClientInteractionsTab.tsx`
+- `apps/api/prisma/migrations/20260401120000_add_impersonate_report/migration.sql`
+
+### Arquivos Modificados
+- `apps/api/prisma/schema.prisma` — Campo `report` no ImpersonateLog
+- `apps/api/src/modules/clients/clients.service.ts` — 4 métodos (sync, saveReport, endImpersonate, getInteractions)
+- `apps/api/src/modules/clients/clients.controller.ts` — 2 endpoints novos (report, interactions)
+- `apps/web/src/features/clients/hooks/useClientModules.ts` — Interface + 3 hooks
+- `apps/web/src/features/clients/components/ClientsList.tsx` — Overlay + aba Interações + visibilidade
+- `apps/web/src/features/clients/components/ClientContractTab.tsx` — Módulos dinâmicos + border fix
+- `apps/web/src/features/clients/components/ClientModulesTab.tsx` — Core lock herança
+
+### Limitação Conhecida
+- **Sync bidirecional**: Sessões encerradas no One Nexus (barra laranja) só são detectadas pelo Gestor após 120min (TTL). Fix definitivo requer endpoint `GET /impersonate/{sessionId}/status` no One Nexus.
+
+---
+
 ## [2.73.7] - 2026-03-31 - Redesign Abas Contrato e Financeiro do Modal de Cliente
 
 ### refactor(clients): Redesign visual completo das abas Contrato e Financeiro

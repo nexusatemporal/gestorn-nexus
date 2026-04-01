@@ -13,6 +13,7 @@ export interface ImpersonateLog {
   startedAt: string;
   endedAt?: string | null;
   actions?: Record<string, unknown> | null;
+  report?: string | null;
   user?: { id: string; name: string };
 }
 
@@ -160,6 +161,30 @@ export const useClientImpersonateLogs = (clientId: string | undefined) => {
   return useQuery<ImpersonateLog[]>({
     queryKey: ['impersonate-logs', clientId],
     queryFn: () => api.get(`/clients/${clientId}/impersonate-logs`).then((r) => r.data),
+    enabled: !!clientId,
+  });
+};
+
+export const useSaveImpersonateReport = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ clientId, logId, report }: { clientId: string; logId: string; report: string }) =>
+      api.patch(`/clients/${clientId}/impersonate/${logId}/report`, { report }).then((r) => r.data),
+    onSuccess: (_, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['impersonate-logs', vars.clientId] });
+      queryClient.invalidateQueries({ queryKey: ['client-interactions', vars.clientId] });
+      toast.success('Relatório salvo com sucesso');
+    },
+    onError: () => {
+      toast.error('Erro ao salvar relatório');
+    },
+  });
+};
+
+export const useClientInteractions = (clientId: string | undefined, days: number = 30) => {
+  return useQuery<ImpersonateLog[]>({
+    queryKey: ['client-interactions', clientId, days],
+    queryFn: () => api.get(`/clients/${clientId}/interactions?days=${days}`).then((r) => r.data),
     enabled: !!clientId,
   });
 };

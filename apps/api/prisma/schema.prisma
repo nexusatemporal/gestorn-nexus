@@ -1038,6 +1038,7 @@ model ImpersonateLog {
   
   // Ações realizadas durante o impersonate (opcional)
   actions     Json?
+  report      String?   /// Relatório opcional pós-impersonate
 
   user   User   @relation(fields: [userId], references: [id])
   client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)

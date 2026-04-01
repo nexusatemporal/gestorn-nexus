@@ -30,6 +30,8 @@ import {
 import { ClientModulesTab } from './ClientModulesTab';
 import { ClientContractTab } from './ClientContractTab';
 import { ClientFinanceTab } from './ClientFinanceTab';
+import { ImpersonateReportOverlay } from './ImpersonateReportOverlay';
+import { ClientInteractionsTab } from './ClientInteractionsTab';
 import { useUIStore } from '@/stores/useUIStore';
 import { useApiQuery } from '@/hooks/useApi';
 import { api } from '@/services/api';
@@ -958,6 +960,7 @@ const ClientDetailModal: React.FC<{
   const [activeTab, setActiveTab] = useState('geral');
   const [tabDropdownOpen, setTabDropdownOpen] = useState(false);
   const [isImpersonateOpen, setIsImpersonateOpen] = useState(false);
+  const [reportOverlayLog, setReportOverlayLog] = useState<ImpersonateLog | null>(null);
 
   const { data: impersonateLogs = [] } = useClientImpersonateLogs(
     activeTab === 'tenant' ? client.id : undefined,
@@ -1068,7 +1071,7 @@ const ClientDetailModal: React.FC<{
                     { id: 'contrato', label: 'Contrato', icon: Calendar, show: true },
                     { id: 'financeiro', label: 'Financeiro', icon: CreditCard, show: canSeeFinancial },
                     { id: 'tenant', label: 'Tenant & Acesso', icon: Database, show: true },
-                    { id: 'interacoes', label: 'Interações', icon: History, show: true },
+                    { id: 'interacoes', label: 'Interações', icon: History, show: canImpersonate },
                     { id: 'modulos', label: 'Módulos', icon: LayoutGrid, show: true },
                   ].filter(t => t.show && t.id !== activeTab).map(tab => (
                     <button
@@ -1110,7 +1113,7 @@ const ClientDetailModal: React.FC<{
               id: 'interacoes',
               label: 'Interações',
               icon: History,
-              show: true,
+              show: canImpersonate,
             },
             {
               id: 'modulos',
@@ -1138,7 +1141,7 @@ const ClientDetailModal: React.FC<{
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-4 md:p-8">
           {activeTab === 'tenant' && client.tenant && (
-            <div className="space-y-8 animate-in fade-in duration-300">
+            <div className="relative space-y-8 animate-in fade-in duration-300">
               {/* 3 Cards Grid */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 {/* Card 1: Sistema & Host */}
@@ -1305,7 +1308,12 @@ const ClientDetailModal: React.FC<{
                                 <span className="text-[10px] text-zinc-500">Encerrada</span>
                               ) : (
                                 <button
-                                  onClick={() => endImpersonateMutation.mutate({ clientId: client.id, logId: log.id })}
+                                  onClick={async () => {
+                                    try {
+                                      const result = await endImpersonateMutation.mutateAsync({ clientId: client.id, logId: log.id });
+                                      if (result?.log) setReportOverlayLog(result.log);
+                                    } catch { /* handled by mutation */ }
+                                  }}
                                   disabled={endImpersonateMutation.isPending}
                                   className="text-[10px] text-red-400 hover:text-red-300 font-bold transition-colors disabled:opacity-50"
                                 >
@@ -1346,12 +1354,15 @@ const ClientDetailModal: React.FC<{
                                   <span className="text-zinc-500">Encerrada</span>
                                 ) : (
                                   <button
-                                    onClick={() =>
-                                      endImpersonateMutation.mutate({
-                                        clientId: client.id,
-                                        logId: log.id,
-                                      })
-                                    }
+                                    onClick={async () => {
+                                      try {
+                                        const result = await endImpersonateMutation.mutateAsync({
+                                          clientId: client.id,
+                                          logId: log.id,
+                                        });
+                                        if (result?.log) setReportOverlayLog(result.log);
+                                      } catch { /* handled by mutation */ }
+                                    }}
                                     disabled={endImpersonateMutation.isPending}
                                     className="text-xs text-red-400 hover:text-red-300 font-bold transition-colors disabled:opacity-50"
                                   >
@@ -1367,6 +1378,15 @@ const ClientDetailModal: React.FC<{
                   )}
                 </div>
               </div>
+
+              {/* Overlay de relatório pós-impersonate */}
+              {reportOverlayLog && (
+                <ImpersonateReportOverlay
+                  log={reportOverlayLog}
+                  clientId={client.id}
+                  onClose={() => setReportOverlayLog(null)}
+                />
+              )}
             </div>
           )}
 
@@ -1474,7 +1494,13 @@ const ClientDetailModal: React.FC<{
             </div>
           )}
 
-          {!['tenant', 'geral', 'modulos', 'contrato', 'financeiro'].includes(activeTab) && (
+          {activeTab === 'interacoes' && (
+            <div className="animate-in fade-in duration-300">
+              <ClientInteractionsTab clientId={client.id} />
+            </div>
+          )}
+
+          {!['tenant', 'geral', 'modulos', 'contrato', 'financeiro', 'interacoes'].includes(activeTab) && (
             <div className="flex items-center justify-center h-48 text-zinc-500 italic">
               Carregando dados de {activeTab}...
             </div>

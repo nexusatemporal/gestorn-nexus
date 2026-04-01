@@ -201,6 +201,23 @@ export class ClientsController {
   }
 
   /**
+   * PATCH /clients/:id/impersonate/:logId/report
+   * Salva relatório pós-impersonate
+   *
+   * REQUER: SUPERADMIN, DESENVOLVEDOR ou GESTOR
+   */
+  @Patch(':id/impersonate/:logId/report')
+  @Roles(UserRole.SUPERADMIN, UserRole.DESENVOLVEDOR, UserRole.GESTOR)
+  async saveImpersonateReport(
+    @Param('logId') logId: string,
+    @Body(new ZodValidationPipe(z.object({ report: z.string().min(1, 'Relatório não pode estar vazio').max(2000) })))
+    dto: { report: string },
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.clientsService.saveImpersonateReport(logId, user, dto.report);
+  }
+
+  /**
    * GET /clients/:id/impersonate-logs
    * Busca histórico de impersonate do cliente
    *
@@ -210,6 +227,23 @@ export class ClientsController {
   @Roles(UserRole.SUPERADMIN, UserRole.DESENVOLVEDOR, UserRole.GESTOR)
   async getImpersonateLogs(@Param('id') id: string) {
     return this.clientsService.getClientImpersonateLogs(id);
+  }
+
+  /**
+   * GET /clients/:id/interactions
+   * Busca interações (relatórios de impersonate) do cliente
+   *
+   * REQUER: SUPERADMIN, DESENVOLVEDOR ou GESTOR
+   */
+  @Get(':id/interactions')
+  @Roles(UserRole.SUPERADMIN, UserRole.DESENVOLVEDOR, UserRole.GESTOR)
+  async getInteractions(
+    @Param('id') id: string,
+    @Query('days') days?: string,
+  ) {
+    const parsedDays = days ? parseInt(days, 10) : 30;
+    const validDays = [30, 60, 90].includes(parsedDays) ? parsedDays : 30;
+    return this.clientsService.getClientInteractions(id, validDays);
   }
 
   /**

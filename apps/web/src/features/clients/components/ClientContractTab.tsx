@@ -46,8 +46,7 @@ import {
 } from 'lucide-react';
 import { useClientDetail } from '../hooks/useClientDetail';
 import { useActiveSubscription } from '../hooks/useReactivateClient';
-import { useModulesCatalog } from '@/features/settings/hooks/usePlansAdmin';
-import type { ModuleTree } from '@/features/settings/api/plans-admin.api';
+import { useClientTenant, useModulesTree } from '../hooks/useClientModules';
 import { useUIStore } from '@/stores/useUIStore';
 import { cn } from '@/utils/cn';
 import { formatCurrency, formatDate } from '@/utils/formatters';
@@ -330,7 +329,9 @@ export function ClientContractTab({ clientId }: Props) {
   const isDark = useUIStore((s) => s.theme === 'dark');
   const { data: client, isLoading: clientLoading } = useClientDetail(clientId);
   const { data: subscription, isLoading: subLoading } = useActiveSubscription(clientId);
-  const { data: catalog = [], isLoading: catalogLoading } = useModulesCatalog();
+  const { data: tenant } = useClientTenant(clientId);
+  const isProvisioned = tenant?.provisioningStatus === 'PROVISIONED';
+  const { data: modulesTree = [], isLoading: modulesLoading } = useModulesTree(tenant?.id, isProvisioned);
   const [expandedParents, setExpandedParents] = useState<Record<string, boolean>>({});
 
   const isLoading = clientLoading || subLoading;
@@ -380,7 +381,12 @@ export function ClientContractTab({ clientId }: Props) {
   const paymentGatewayLabel =
     PAYMENT_GATEWAY_LABELS[client.paymentGateway ?? ''] ?? client.paymentGateway ?? null;
 
-  const modules: string[] = Array.isArray(plan?.includedModules) ? plan!.includedModules : [];
+  // Módulos reais ativados no tenant (dinâmico, via One Nexus API)
+  const enabledParents = modulesTree.filter((m) => m.isEnabled);
+  const totalEnabledModules = enabledParents.reduce(
+    (sum, m) => sum + 1 + m.children.filter((c) => c.isEnabled).length,
+    0
+  );
 
   return (
     <div className="space-y-4 animate-in fade-in duration-300">
@@ -614,7 +620,7 @@ export function ClientContractTab({ clientId }: Props) {
                   isDark ? 'text-zinc-100' : 'text-zinc-900'
                 )}
               >
-                {modules.length}
+                {totalEnabledModules}
               </p>
               <p className="text-[10px] text-zinc-500 uppercase tracking-wide font-bold">
                 Módulos
@@ -622,7 +628,7 @@ export function ClientContractTab({ clientId }: Props) {
             </div>
           </div>
 
-          {/* Lista de Módulos — accordion hierárquico */}
+          {/* Lista de Módulos — accordion hierárquico (dados reais do tenant) */}
           <div>
             <p
               className={cn(
@@ -630,11 +636,11 @@ export function ClientContractTab({ clientId }: Props) {
                 isDark ? 'text-zinc-500' : 'text-zinc-400'
               )}
             >
-              Módulos Incluídos
+              Módulos Ativos
             </p>
 
-            {/* Skeleton enquanto o catálogo carrega */}
-            {catalogLoading && (
+            {/* Skeleton enquanto os módulos carregam */}
+            {modulesLoading && (
               <div className="space-y-2">
                 {[1, 2, 3].map((i) => (
                   <div
@@ -648,25 +654,28 @@ export function ClientContractTab({ clientId }: Props) {
               </div>
             )}
 
-            {/* Catálogo carregado — cruzar com includedModules */}
-            {!catalogLoading && (() => {
-              const moduleSet = new Set(modules);
+            {/* Tenant não provisionado */}
+            {!modulesLoading && !isProvisioned && (
+              <div className="flex flex-col items-center justify-center py-6 gap-2">
+                <LayoutGrid size={24} className="text-zinc-400" />
+                <p className="text-xs text-zinc-500">Tenant não provisionado — módulos indisponíveis.</p>
+              </div>
+            )}
 
-              // Filtrar apenas pais (ou filhos) presentes em includedModules
-              const visibleParents: (ModuleTree & { visibleChildren: ModuleTree['children'] })[] = catalog
-                .map((parent) => {
-                  const visibleChildren = parent.children.filter((child) =>
-                    moduleSet.has(child.id)
-                  );
-                  return { ...parent, visibleChildren };
-                })
-                .filter((parent) => parent.visibleChildren.length > 0 || moduleSet.has(parent.id));
+            {/* Módulos reais do tenant */}
+            {!modulesLoading && isProvisioned && (() => {
+              // Filtrar pais habilitados com filhos habilitados
+              const visibleParents = enabledParents
+                .map((parent) => ({
+                  ...parent,
+                  enabledChildren: parent.children.filter((c) => c.isEnabled),
+                }));
 
               if (visibleParents.length === 0) {
                 return (
                   <div className="flex flex-col items-center justify-center py-6 gap-2">
                     <LayoutGrid size={24} className="text-zinc-400" />
-                    <p className="text-xs text-zinc-500">Nenhum módulo incluído neste plano.</p>
+                    <p className="text-xs text-zinc-500">Nenhum módulo ativo neste tenant.</p>
                   </div>
                 );
               }
@@ -678,7 +687,7 @@ export function ClientContractTab({ clientId }: Props) {
                       MODULE_PARENT_COLORS[parent.slug] ??
                       'text-zinc-400 bg-zinc-500/10 border-zinc-500/20';
                     const ParentIcon = getModuleIcon(parent.slug, parent.icon);
-                    const hasChildren = parent.visibleChildren.length > 0;
+                    const hasChildren = parent.enabledChildren.length > 0;
                     const isOpen = expandedParents[parent.id] ?? false;
 
                     return (
@@ -737,7 +746,7 @@ export function ClientContractTab({ clientId }: Props) {
                                     : 'bg-zinc-100 border-zinc-200 text-zinc-500'
                                 )}
                               >
-                                {parent.visibleChildren.length}
+                                {parent.enabledChildren.length}
                               </span>
                             )}
                           </div>
@@ -764,7 +773,7 @@ export function ClientContractTab({ clientId }: Props) {
                                 : 'border-zinc-100 bg-zinc-50/60'
                             )}
                           >
-                            {parent.visibleChildren.map((child) => {
+                            {parent.enabledChildren.map((child) => {
                               const ChildIcon = getModuleIcon(child.slug, child.icon);
                               return (
                                 <div
@@ -870,10 +879,11 @@ export function ClientContractTab({ clientId }: Props) {
             </p>
             <div
               className={cn(
-                'p-4 rounded-xl text-sm leading-relaxed whitespace-pre-wrap border-l-2 border-amber-500/40',
+                'p-4 rounded-xl text-sm leading-relaxed whitespace-pre-wrap',
                 isDark
-                  ? 'bg-zinc-800/60 text-zinc-300 border border-zinc-700/50'
-                  : 'bg-white text-zinc-700 border border-zinc-200'
+                  ? 'bg-zinc-800/60 text-zinc-300 border-t border-r border-b border-zinc-700/50'
+                  : 'bg-white text-zinc-700 border-t border-r border-b border-zinc-200',
+                'border-l-2 border-l-amber-500/40'
               )}
             >
               {client.dealSummary}
@@ -894,10 +904,11 @@ export function ClientContractTab({ clientId }: Props) {
             </p>
             <div
               className={cn(
-                'p-4 rounded-xl text-sm leading-relaxed whitespace-pre-wrap border-l-2 border-indigo-500/40',
+                'p-4 rounded-xl text-sm leading-relaxed whitespace-pre-wrap',
                 isDark
-                  ? 'bg-zinc-800/60 text-zinc-300 border border-zinc-700/50'
-                  : 'bg-white text-zinc-700 border border-zinc-200'
+                  ? 'bg-zinc-800/60 text-zinc-300 border-t border-r border-b border-zinc-700/50'
+                  : 'bg-white text-zinc-700 border-t border-r border-b border-zinc-200',
+                'border-l-2 border-l-indigo-500/40'
               )}
             >
               {client.implementationNotes}

@@ -34,6 +34,25 @@ import {
   Instagram,
   Link,
   Lock,
+  Headphones,
+  Ticket,
+  BookMarked,
+  ShieldCheck,
+  ScrollText,
+  Wallet,
+  ArrowDownCircle,
+  ArrowUpCircle,
+  Landmark,
+  FileBarChart,
+  Building2,
+  Receipt,
+  Sparkles,
+  CalendarClock,
+  Clock,
+  UserCheck,
+  Globe2,
+  MessageCircle,
+  ArrowLeftRight,
   type LucideIcon,
 } from 'lucide-react';
 import {
@@ -63,6 +82,7 @@ const ICON_MAP: Record<string, LucideIcon> = {
   nexus_chat: MessageSquare,
   collaboration: Layers,
   settings: Settings,
+  support: Headphones,
   // Filhos por slug
   'sales.leads': Users,
   'sales.opportunities': Target,
@@ -88,9 +108,18 @@ const ICON_MAP: Record<string, LucideIcon> = {
   'financial.dashboard': LayoutDashboard,
   'financial.transactions': DollarSign,
   'financial.bank_reconciliation': BookOpen,
-  'financial.receipts': FileText,
+  'financial.accounts_payable': ArrowUpCircle,
+  'financial.receipts': Receipt,
+  'financial.accounts_receivable': ArrowDownCircle,
   'financial.categories': Layers,
+  'financial.cash_flow': Wallet,
   'financial.goals': Target,
+  'financial.suppliers': Truck,
+  'financial.reports': FileBarChart,
+  'financial.cost_centers': Building2,
+  'financial.bank_accounts': Landmark,
+  'financial.dre': ScrollText,
+  'financial.iris': Sparkles,
   'stock.dashboard': LayoutDashboard,
   'stock.products': Package,
   'stock.movements': TrendingUp,
@@ -105,6 +134,8 @@ const ICON_MAP: Record<string, LucideIcon> = {
   'bi.goals_okrs': Target,
   'bi.reports': PieChart,
   'bi.alerts': Bell,
+  'bi.iris': Sparkles,
+  'bi.settings': Settings,
   'marketing.ads': Megaphone,
   'marketing.ai_content': Brain,
   'marketing.automation': Settings,
@@ -129,6 +160,17 @@ const ICON_MAP: Record<string, LucideIcon> = {
   'settings.tags': Target,
   'settings.financial_categories': DollarSign,
   'settings.whatsapp_templates': MessageSquare,
+  'settings.status_agenda': CalendarClock,
+  'settings.schedules': Clock,
+  'settings.availability': UserCheck,
+  'settings.online_booking': Globe2,
+  'settings.whatsapp_config': MessageCircle,
+  'settings.swap_requests': ArrowLeftRight,
+  'support.tickets': Ticket,
+  'support.knowledge_base': BookMarked,
+  'support.changelog': ScrollText,
+  'support.admin': ShieldCheck,
+  'support.audit_logs': ScrollText,
   // Fallback por icon name string (retorno da API)
   TrendingUp,
   Users,
@@ -165,6 +207,7 @@ const PARENT_COLORS: Record<string, string> = {
   nexus_chat: 'text-cyan-500 bg-cyan-500/10 border-cyan-500/20',
   collaboration: 'text-violet-500 bg-violet-500/10 border-violet-500/20',
   settings: 'text-zinc-400 bg-zinc-500/10 border-zinc-500/20',
+  support: 'text-teal-500 bg-teal-500/10 border-teal-500/20',
 };
 
 const PRESET_LABELS: { value: ModulePreset; label: string; desc: string; color: string }[] = [
@@ -291,7 +334,7 @@ function ModuleCard({
               <span className={`flex-1 text-xs ${child.isEnabled ? (isDark ? 'text-zinc-200' : 'text-zinc-800') : 'text-zinc-500'}`}>
                 {child.name}
               </span>
-              {child.isCore ? (
+              {child.isCore || module.isCore ? (
                 <Lock size={10} className="shrink-0 text-zinc-500" />
               ) : (
                 <Toggle

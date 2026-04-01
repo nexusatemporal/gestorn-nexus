@@ -1289,7 +1289,7 @@ export class ClientsService {
   async endImpersonate(
     logId: string,
     currentUser: AuthUser,
-  ): Promise<{ success: boolean }> {
+  ): Promise<{ success: boolean; log?: unknown }> {
     const log = await this.prisma.impersonateLog.findUnique({
       where: { id: logId },
     });
@@ -1314,19 +1314,100 @@ export class ClientsService {
       }
     }
 
-    // Registrar encerramento
-    await this.prisma.impersonateLog.update({
+    // Registrar encerramento e retornar log completo
+    const updatedLog = await this.prisma.impersonateLog.update({
       where: { id: logId },
       data: { endedAt: new Date() },
+      include: { user: { select: { id: true, name: true } } },
     });
 
     this.logger.log(`[Impersonate] ✅ Sessão encerrada: logId=${logId}, sessionId=${sessionId}`);
+
+    return { success: true, log: updatedLog };
+  }
+
+  /**
+   * Salva relatório pós-impersonate.
+   * REQUER: Dono do log OU SUPERADMIN. Sessão deve estar encerrada.
+   */
+  async saveImpersonateReport(
+    logId: string,
+    currentUser: AuthUser,
+    report: string,
+  ): Promise<{ success: boolean }> {
+    const log = await this.prisma.impersonateLog.findUnique({
+      where: { id: logId },
+    });
+
+    if (!log) {
+      throw new NotFoundException('Log de impersonate não encontrado');
+    }
+
+    if (log.userId !== currentUser.id && currentUser.role !== UserRole.SUPERADMIN) {
+      throw new ForbiddenException('Apenas o usuário que realizou o impersonate ou SUPERADMIN pode salvar o relatório');
+    }
+
+    if (!log.endedAt) {
+      throw new BadRequestException('A sessão deve estar encerrada para salvar um relatório');
+    }
+
+    await this.prisma.impersonateLog.update({
+      where: { id: logId },
+      data: { report },
+    });
+
+    this.logger.log(`[Impersonate] 📝 Relatório salvo: logId=${logId}, por ${currentUser.id}`);
 
     return { success: true };
   }
 
   /**
+   * Sincroniza sessões de impersonate ativas com o One Nexus.
+   * Para cada sessão sem endedAt, tenta encerrar no One Nexus.
+   * Se já encerrada/expirada lá, marca localmente como encerrada.
+   * Padrão "sync-on-read" — chamado antes de retornar logs.
+   */
+  private async syncActiveImpersonateSessions(clientId: string): Promise<void> {
+    // Só sincronizar sessões expiradas pelo TTL (120 min).
+    // Sessões recentes podem estar legitimamente ativas — NÃO encerrar.
+    const ttlThreshold = new Date();
+    ttlThreshold.setMinutes(ttlThreshold.getMinutes() - 120);
+
+    const staleLogs = await this.prisma.impersonateLog.findMany({
+      where: {
+        clientId,
+        endedAt: null,
+        startedAt: { lt: ttlThreshold },
+      },
+      orderBy: { startedAt: 'desc' },
+      take: 5,
+    });
+
+    if (staleLogs.length === 0) return;
+
+    const syncPromises = staleLogs.map(async (log) => {
+      const sessionId = (log.actions as any)?.oneNexusSessionId;
+
+      // Sessão expirada pelo TTL — marcar como encerrada localmente
+      // Se tiver sessionId, tenta encerrar no One Nexus também (já deve ter expirado lá)
+      if (sessionId) {
+        await this.oneNexusService.endImpersonate(sessionId).catch(() => {});
+      }
+
+      await this.prisma.impersonateLog.update({
+        where: { id: log.id },
+        data: { endedAt: new Date() },
+      });
+
+      this.logger.log(`[Impersonate Sync] Sessão expirada ${sessionId || 'sem-id'} (log ${log.id}) marcada como encerrada`);
+    });
+
+    await Promise.allSettled(syncPromises);
+  }
+
+  /**
    * Busca histórico de impersonate de um cliente.
+   * Sincroniza sessões ativas com o One Nexus antes de retornar.
    */
   async getClientImpersonateLogs(clientId: string) {
     const client = await this.prisma.client.findUnique({ where: { id: clientId } });
@@ -1334,11 +1415,39 @@ export class ClientsService {
       throw new NotFoundException('Cliente não encontrado');
     }
 
+    // Sync-on-read: sincronizar sessões ativas antes de retornar
+    await this.syncActiveImpersonateSessions(clientId);
+
     return this.prisma.impersonateLog.findMany({
       where: { clientId },
       include: { user: { select: { id: true, name: true } } },
       orderBy: { startedAt: 'desc' },
       take: 50,
+    });
+  }
+
+  /**
+   * Busca interações (relatórios de impersonate) de um cliente.
+   * Filtra por período (30, 60 ou 90 dias).
+   */
+  async getClientInteractions(clientId: string, days: number = 30) {
+    const client = await this.prisma.client.findUnique({ where: { id: clientId } });
+    if (!client) {
+      throw new NotFoundException('Cliente não encontrado');
+    }
+
+    const since = new Date();
+    since.setDate(since.getDate() - days);
+
+    return this.prisma.impersonateLog.findMany({
+      where: {
+        clientId,
+        report: { not: null },
+        startedAt: { gte: since },
+      },
+      include: { user: { select: { id: true, name: true } } },
+      orderBy: { startedAt: 'desc' },
+      take: 100,
     });
   }
 }

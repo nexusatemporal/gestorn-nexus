@@ -972,6 +972,14 @@ export class TenantsService {
     if (!tree) {
       throw new BadRequestException('Não foi possível buscar módulos do One Nexus');
     }
+
+    // Desbloquear "Configurações" (settings) — permitir toggle no Gestor
+    for (const mod of tree) {
+      if (mod.slug === 'settings') {
+        mod.isCore = false;
+      }
+    }
+
     return tree;
   }
 
